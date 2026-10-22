@@ -39,7 +39,12 @@ def _seed(hass_storage: dict[str, Any], entry: MockConfigEntry, value: float) ->
     }
 
 
-async def _fix(hass: HomeAssistant, issue_id: str, value: float) -> dict[str, Any]:
+async def _fix(
+    hass: HomeAssistant,
+    issue_id: str,
+    value: float,
+    suggested: list[Any] | None = None,
+) -> dict[str, Any]:
     assert await async_setup_component(hass, "repairs", {})
     manager = repairs_flow_manager(hass)
     assert manager is not None
@@ -47,6 +52,9 @@ async def _fix(hass: HomeAssistant, issue_id: str, value: float) -> dict[str, An
     if result["type"] is not FlowResultType.FORM:
         return dict(result)
     assert result["step_id"] == "value"
+    if suggested is not None:
+        field = next(iter(result["data_schema"].schema))
+        suggested.append((field.description or {}).get("suggested_value"))
     return dict(await manager.async_configure(result["flow_id"], {"value": value}))
 
 
@@ -87,7 +95,10 @@ async def test_lasting_misread_drops_raise_a_repair(
     assert issue.translation_placeholders["last"] == "133.456"
     assert hass.states.get(METER_ENTITY_ID).state == "133.456"
 
-    result = await _fix(hass, issue_id, 123.456)
+    suggested: list[Any] = []
+    result = await _fix(hass, issue_id, 123.456, suggested)
+    # One click must not confirm what may be a misread: the last value.
+    assert suggested == [133.456]
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
     assert hass.states.get(METER_ENTITY_ID).state == "123.456"

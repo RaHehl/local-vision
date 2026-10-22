@@ -2,7 +2,6 @@
 
 from typing import Any
 
-
 from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -40,7 +39,7 @@ class MeterValueRepairFlow(RepairsFlow):
         if user_input is not None:
             await coordinator.async_correct(user_input[CONF_VALUE])
             return self.async_create_entry(data={})
-        suggested = data.get("value", coordinator.value)
+        suggested = coordinator.value
         return self.async_show_form(
             step_id="value",
             data_schema=self.add_suggested_values_to_schema(

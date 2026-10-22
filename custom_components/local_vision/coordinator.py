@@ -123,9 +123,7 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
     @property
     def value(self) -> float | None:
         """Return the last accepted value, None before one was confirmed."""
-        if (state := self.session.state) is None:
-            return None
-        return state.value
+        return self.session.value
 
     @override
     async def _async_update_data(self) -> Readout | None:
@@ -172,7 +170,9 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
             self.hass,
             DOMAIN,
             issue_id,
-            data={"entry_id": self.config_entry.entry_id, "value": dispute.value},
+            # The fix suggests the last value, not the disputed reading:
+            # one click must not confirm what may be a misread.
+            data={"entry_id": self.config_entry.entry_id},
             is_fixable=True,
             severity=ir.IssueSeverity.WARNING,
             translation_key="meter_disputed",
@@ -197,7 +197,7 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
         meter = self._stored.get("meter")
         meter = dict(meter) if isinstance(meter, dict) else {}
         if (state := self.session.state) is not None:
-            meter |= state.as_dict()
+            meter |= state
         self._stored = {**self._stored, "meter": meter}
         if (exposure := self.session.exposure) is not None:
             self._stored["exposure"] = exposure

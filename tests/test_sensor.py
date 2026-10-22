@@ -23,7 +23,6 @@ from custom_components.local_vision.const import (
     DOMAIN,
     UPDATE_INTERVAL,
 )
-from custom_components.local_vision.meter_reader import MeterDispute, MeterState
 from custom_components.local_vision.meter_store import SAVE_DELAY, STORAGE_VERSION
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -717,48 +716,55 @@ async def test_correct_not_loaded(
     assert result["reason"] == "not_loaded"
 
 
-def test_meter_state_round_trip() -> None:
-    """Everything the checks remember survives the store."""
-    at = dt_util.utcnow()
-    state = MeterState(
-        627.5,
-        at,
-        alternative=True,
-        pending=((620.0, at),),
-        misreads=(10.0,),
-        dispute=MeterDispute(at, at, 3, 617.5),
-    )
-    assert MeterState.from_dict(state.as_dict()) == state
-
-
-@pytest.mark.parametrize(
-    ("extra", "kept"),
-    [
-        ({"pending": [[1.0], ["x", "y"], [1.0, "soon"]]}, {"pending": ()}),
-        ({"misreads": [-1.0, "10", 10.0]}, {"misreads": (10.0,)}),
-        ({"dispute": {"since": "x"}}, {"dispute": None}),
-        (
-            {
-                "dispute": {
-                    "since": "2026-10-20T00:00:00+00:00",
-                    "last": "2026-10-20T00:00:00+00:00",
-                    "count": 0,
-                    "value": 1.0,
-                }
-            },
-            {"dispute": None},
-        ),
-        ({"dispute": [1]}, {"dispute": None}),
-        ({"alternative": "yes"}, {"alternative": False}),
-    ],
-)
-def test_meter_state_drops_unusable_details(
-    extra: dict[str, Any], kept: dict[str, Any]
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_store_from_version_3_is_migrated(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    meter_entry: MockConfigEntry,
 ) -> None:
-    """Value and time are kept when a detail is unusable."""
-    data = {"value": 1.0, "at": "2026-10-20T00:00:00+00:00"} | extra
-    state = MeterState.from_dict(data)
-    assert state is not None
-    assert state.value == 1.0
-    for name, value in kept.items():
-        assert getattr(state, name) == value
+    """A flag and bare misread offsets give way, the rest is tarsius' state."""
+    at = "2026-10-20T08:00:00+00:00"
+    hass_storage[_key(meter_entry)] = {
+        "version": 3,
+        "minor_version": 1,
+        "key": _key(meter_entry),
+        "data": {
+            "meter": {
+                "value": 123.0,
+                "at": at,
+                "alternative": True,
+                "pending": [[120.0, at]],
+                "misreads": [10.0],
+                "dispute": None,
+            }
+        },
+    }
+    await setup_integration(hass, meter_entry)
+
+    meter = hass_storage[_key(meter_entry)]["data"]["meter"]
+    assert "alternative" not in meter
+    assert "misreads" not in meter
+    assert meter["pending"] == [[120.0, at]]
+    assert _state(hass) == "123.456"
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_exposure_of_another_calibration_is_not_used(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    meter_entry: MockConfigEntry,
+) -> None:
+    """Exposure learnt on an older calibration starts afresh."""
+    _store(
+        hass_storage,
+        meter_entry,
+        {
+            "exposure": {
+                "source": "elsewhere",
+                "light": 100.0,
+                "baseline": [[1, 0, 0, 0, 1]],
+            }
+        },
+    )
+    await setup_integration(hass, meter_entry)
+    assert meter_entry.runtime_data.session.exposure is None

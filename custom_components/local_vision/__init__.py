@@ -1,5 +1,7 @@
 """The Local vision integration."""
 
+from typing import Any
+
 from tarsius import BackendError
 
 from homeassistant.components.sensor import SensorDeviceClass
@@ -16,7 +18,6 @@ from .const import (
     CONF_TYPE,
     CONF_UNIT,
     DOMAIN,
-    LOGGER,
     METER_UNITS,
     TYPE_METER,
     TYPE_STATE,
@@ -29,7 +30,7 @@ from .coordinator import (
     async_delete_unconfirmed_issue,
 )
 from .detection import async_create_detector
-from .meter_reader import MeterSession, MeterState
+from .meter_reader import MeterSession, parse_state
 from .meter_store import meter_store
 from .taught_frames import TaughtFrames, async_remove_entry_data
 
@@ -93,12 +94,9 @@ async def _async_create_coordinator(
         store = meter_store(hass, entry.entry_id)
         if not isinstance(stored := await store.async_load(), dict):
             stored = {}
-        meter = stored.get("meter")
-        if meter and MeterState.from_dict(meter) is None:
-            LOGGER.warning("Ignoring invalid stored meter state %r", meter)
         state = _newest(
-            MeterState.from_dict(meter),
-            MeterState.from_dict(entry.options.get(CONF_CONFIRMED)),
+            parse_state(stored.get("meter") or None),
+            parse_state(entry.options.get(CONF_CONFIRMED)),
         )
         try:
             session = MeterSession(entry.options, state, stored.get("exposure"))
@@ -121,7 +119,7 @@ async def _async_create_coordinator(
     return StateCoordinator(hass, entry, taught_frames)
 
 
-def _newest(*states: MeterState | None) -> MeterState | None:
+def _newest(*states: Any) -> Any:
     """Return the latest state; a value confirmed in a flow can be newer."""
     known = [state for state in states if state is not None]
     return max(known, key=lambda state: state.at, default=None)

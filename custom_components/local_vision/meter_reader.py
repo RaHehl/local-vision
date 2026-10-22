@@ -7,7 +7,6 @@ from datetime import datetime
 import hashlib
 from io import BytesIO
 import json
-import math
 from typing import Any
 import warnings
 
@@ -40,7 +39,7 @@ from .const import (
 )
 from .detection import region_to_roi
 
-__all__ = ["MeterDispute", "MeterSession", "MeterState", "Readout"]
+__all__ = ["MeterSession", "Readout", "parse_state"]
 
 # Previews keep the detail of the frame the wheels are read from.
 PREVIEW_SIDE = METER_FRAME_SIDE
@@ -49,140 +48,18 @@ ACCEPTED = "accepted"
 STATUSES = [ACCEPTED, *(rejection.value for rejection in Rejection)]
 
 
-def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    return float(value) if math.isfinite(value) else None
+def parse_state(data: Any) -> PlausibilityState | None:
+    """Return the meter state of a stored or confirmed dict, None if unusable.
 
-
-def _time(value: Any) -> datetime | None:
-    if not isinstance(value, str):
+    The state is tarsius' own, stored as its dict in a versioned store.
+    """
+    if data is None:
         return None
     try:
-        parsed = datetime.fromisoformat(value)
+        return PlausibilityState.from_dict(data)
     except ValueError:
+        LOGGER.warning("Ignoring invalid stored meter state %r", data)
         return None
-    return parsed if parsed.utcoffset() is not None else None
-
-
-@dataclass(frozen=True, slots=True)
-class MeterDispute:
-    """Lower readings that only a misread explains, lasting."""
-
-    since: datetime
-    last: datetime
-    count: int
-    # The latest of them.
-    value: float
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return the stored form."""
-        return {
-            "since": self.since.isoformat(),
-            "last": self.last.isoformat(),
-            "count": self.count,
-            "value": self.value,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Any) -> MeterDispute | None:
-        """Return the dispute of a stored form, None when it is not usable."""
-        if not isinstance(data, Mapping):
-            return None
-        since, last = _time(data.get("since")), _time(data.get("last"))
-        count, value = data.get("count"), _number(data.get("value"))
-        if since is None or last is None or value is None:
-            return None
-        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
-            return None
-        return cls(since, last, count, value)
-
-
-@dataclass(frozen=True, slots=True)
-class MeterState:
-    """The last accepted value of a meter and what its checks remember."""
-
-    value: float
-    # Timezone-aware.
-    at: datetime
-    # The value came from another reading of the upper wheels.
-    alternative: bool = False
-    # Lower readings that agree so far, (value, time).
-    pending: tuple[tuple[float, datetime], ...] = ()
-    # Offsets of misreads seen.
-    misreads: tuple[float, ...] = ()
-    dispute: MeterDispute | None = None
-
-    def as_dict(self) -> dict[str, Any]:
-        """Return the stored form."""
-        return {
-            "value": self.value,
-            "at": self.at.isoformat(),
-            "alternative": self.alternative,
-            "pending": [[value, at.isoformat()] for value, at in self.pending],
-            "misreads": list(self.misreads),
-            "dispute": None if self.dispute is None else self.dispute.as_dict(),
-        }
-
-    @classmethod
-    def from_dict(cls, data: Any) -> MeterState | None:
-        """Return the state of a stored form, None when it is not usable.
-
-        Value and time are required; unusable details are dropped.
-        """
-        if not isinstance(data, Mapping):
-            return None
-        value, at = _number(data.get("value")), _time(data.get("at"))
-        if value is None or at is None:
-            return None
-        pending: list[tuple[float, datetime]] = []
-        for item in data.get("pending") or []:
-            if isinstance(item, list | tuple) and len(item) == 2:
-                p_value, p_at = _number(item[0]), _time(item[1])
-                if p_value is not None and p_at is not None:
-                    pending.append((p_value, p_at))
-        misreads = tuple(
-            offset
-            for offset in (_number(item) for item in data.get("misreads") or [])
-            if offset is not None and offset > 0
-        )
-        return cls(
-            value,
-            at,
-            data.get("alternative") is True,
-            tuple(pending),
-            misreads,
-            MeterDispute.from_dict(data.get("dispute")),
-        )
-
-    def _to_tarsius(self) -> PlausibilityState:
-        dispute = self.dispute
-        return PlausibilityState(
-            self.value,
-            self.at,
-            self.alternative,
-            self.pending,
-            self.misreads,
-            None
-            if dispute is None
-            else Dispute(dispute.since, dispute.last, dispute.count, dispute.value),
-        )
-
-    @classmethod
-    def _from_tarsius(cls, state: PlausibilityState) -> MeterState:
-        dispute = state.dispute
-        return cls(
-            state.value,
-            state.at,
-            state.alternative,
-            state.pending,
-            state.misreads,
-            None
-            if dispute is None
-            else MeterDispute(
-                dispute.since, dispute.last, dispute.count, dispute.value
-            ),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,15 +206,15 @@ class MeterSession:
     def __init__(
         self,
         options: Mapping[str, Any],
-        state: MeterState | None,
+        state: PlausibilityState | None,
         exposure: Mapping[str, Any] | None = None,
     ) -> None:
         """Initialize from the entry options, the state and the learnt exposure.
 
         Raises ValueError for options tarsius refuses, e.g. a maximum rate
-        of 0 or a calibration that is out of range. ``exposure`` is from
-        :attr:`exposure`; it is used while the calibration it was learnt on
-        is still the entry's.
+        of 0 or a calibration that is out of range. ``state`` is from
+        :func:`parse_state`, ``exposure`` from :attr:`exposure`; it is used
+        while the calibration it was learnt on is still the entry's.
         """
         self.layout = layout_from_options(options)
         self._source = _fingerprint(options.get(CONF_CALIBRATION))
@@ -350,22 +227,27 @@ class MeterSession:
             tolerance=10.0**-self.layout.decimals,
             # The counter wraps to zero; the value counts on.
             period=self.layout.period,
-            state=None if state is None else state._to_tarsius(),
+            state=state,
         )
 
     @property
-    def state(self) -> MeterState | None:
+    def value(self) -> float | None:
         """Return the last accepted value, None before one was confirmed."""
         if (state := self._plausibility.state) is None:
             return None
-        return MeterState._from_tarsius(state)
+        return state.value
 
     @property
-    def dispute(self) -> MeterDispute | None:
-        """Return lasting lower readings that only a misread explains."""
-        if (dispute := self._plausibility.dispute) is None:
+    def state(self) -> dict[str, Any] | None:
+        """Return the state to store, None before a value was confirmed."""
+        if (state := self._plausibility.state) is None:
             return None
-        return MeterDispute(dispute.since, dispute.last, dispute.count, dispute.value)
+        return state.as_dict()
+
+    @property
+    def dispute(self) -> Dispute | None:
+        """Return lasting readings that contradict the last value, or None."""
+        return self._plausibility.dispute
 
     @property
     def exposure(self) -> dict[str, Any] | None:

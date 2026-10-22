@@ -6,13 +6,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN
-from .meter_reader import MeterState
+from .meter_reader import parse_state
 
 # 1 kept a separate highest value next to tarsius' own plausibility state.
 # 2 keeps one state, {"meter": {"value": float, "at": iso time}}.
-# 3 adds what the checks remember to "meter" (see MeterState) and the
-#   exposure learnt from readings as "exposure"; 2 reads as 3 unchanged.
-STORAGE_VERSION = 3
+# 3 adds what the checks remember to "meter" and the exposure learnt from
+#   readings as "exposure".
+# 4 keeps "meter" as tarsius' PlausibilityState dict.
+STORAGE_VERSION = 4
 # Readings come every few minutes; a restart flushes pending saves.
 SAVE_DELAY = 10
 
@@ -36,8 +37,16 @@ class MeterStore(Store[dict[str, Any]]):
                 for key, value in meter.items()
                 if key not in ("value", "plausibility")
             }
-            state = MeterState.from_dict(meter.get("plausibility"))
-            data["meter"] = rest | (state.as_dict() if state else {})
+            state = parse_state(meter.get("plausibility"))
+            data["meter"] = meter = rest | (state.as_dict() if state else {})
+        if old_major_version < 4 and isinstance(meter, dict):
+            # 3 kept a flag where tarsius keeps an offset, and bare misread
+            # offsets where it follows them; both start afresh.
+            data["meter"] = {
+                key: value
+                for key, value in meter.items()
+                if key not in ("alternative", "misreads")
+            }
         return data
 
 
