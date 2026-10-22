@@ -9,14 +9,17 @@ from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.device import async_entity_id_to_device_id
 from homeassistant.helpers.helper_integration import async_handle_source_entity_changes
 from homeassistant.helpers.start import async_at_started
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import CONF_TYPE, DOMAIN, TYPE_STATE
-from .coordinator import LocalVisionConfigEntry, StateCoordinator
+from .const import CONF_TYPE, DOMAIN, TYPE_METER, TYPE_STATE
+from .coordinator import LocalVisionConfigEntry, MeterCoordinator, StateCoordinator
 from .detection import async_create_detector
-from .taught_frames import TaughtFrames, async_remove_entry_data
+from .meter_reader import MeterSession
+from .taught_frames import TaughtFrames, async_remove_entry_data, entry_store
 
-PLATFORMS = {TYPE_STATE: [Platform.BINARY_SENSOR]}
+PLATFORMS = {
+    TYPE_STATE: [Platform.BINARY_SENSOR],
+    TYPE_METER: [Platform.SENSOR],
+}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: LocalVisionConfigEntry) -> bool:
@@ -67,8 +70,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalVisionConfigEntry) 
 
 async def _async_create_coordinator(
     hass: HomeAssistant, entry: LocalVisionConfigEntry
-) -> DataUpdateCoordinator:
+) -> StateCoordinator | MeterCoordinator:
     """Create the coordinator for the type of the entry."""
+    if entry.options[CONF_TYPE] == TYPE_METER:
+        store = entry_store(hass, entry.entry_id)
+        if not isinstance(stored := await store.async_load(), dict):
+            stored = {}
+        if not isinstance(stored.get("meter"), dict):
+            stored = {**stored, "meter": {}}
+        session = MeterSession(entry.options, stored["meter"].get("plausibility"))
+        await hass.async_add_executor_job(session.load)
+        return MeterCoordinator(hass, entry, session, store, stored)
     detector = await async_create_detector(hass, entry.options[CONF_REGION])
     taught_frames = TaughtFrames(hass, entry.entry_id, detector)
     entry.async_on_unload(taught_frames.close)

@@ -6,6 +6,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from tarsius.meter import MeterReading, Rejection
 
 from custom_components.local_vision.const import (
     CONF_BOTTOM,
@@ -131,3 +132,23 @@ def stored_frames(
 def frame_files(config_dir: Path, entry: MockConfigEntry) -> set[str]:
     """Return the ids of the frame files on disk."""
     return {path.stem for path in (config_dir / DOMAIN / entry.entry_id).glob("*.jpg")}
+
+
+METER_ENTITY_ID = "sensor.garage_camera_water_meter"
+STATUS_ENTITY_ID = "sensor.garage_camera_water_meter_reading_status"
+CONFIDENCE_ENTITY_ID = "sensor.garage_camera_water_meter_reading_confidence"
+DIGITS = {CONF_LEFT: 30, CONF_TOP: 40, CONF_RIGHT: 70, CONF_BOTTOM: 50}
+DIAL = {CONF_LEFT: 60, CONF_TOP: 60, CONF_RIGHT: 70, CONF_BOTTOM: 80}
+METER_INPUT = {
+    CONF_ENTITY_ID: CAMERA,
+    CONF_DEVICE_CLASS: "water",
+    CONF_NAME: "Water meter",
+}
+
+
+def meter_reading(
+    value: float, rejection: Rejection | None = None, confidence: float = 0.9
+) -> MeterReading:
+    """Return a reading as tarsius gives it, rejected or not."""
+    reading = MeterReading(value, value, None, confidence, 0.05, 0.001)
+    return reading if rejection is None else reading.rejected(rejection)

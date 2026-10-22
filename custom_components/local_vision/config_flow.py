@@ -10,6 +10,7 @@ from tarsius import (
     BlankRegionError,
     ImageError,
     RoiError,
+    load_image,
 )
 
 from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN
@@ -32,22 +33,53 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_BOTTOM,
+    CONF_CALIBRATION,
+    CONF_COUNTERCLOCKWISE,
+    CONF_DECIMAL_WHEELS,
+    CONF_DIAL_COUNT,
+    CONF_DIALS,
+    CONF_DIGITS,
     CONF_FRAMES,
     CONF_LEFT,
+    CONF_MAX_RATE,
     CONF_RIGHT,
+    CONF_ROTATION,
     CONF_TOP,
     CONF_TYPE,
+    CONF_UNIT,
+    CONF_VALUE,
+    CONF_WHEELS,
     DEFAULT_DEVICE_CLASS,
+    DEFAULT_MAX_RATES,
     DEFAULT_REGION,
     DEVICE_CLASSES,
     DOMAIN,
     LOGGER,
+    MAX_DIALS,
+    MAX_WHEELS,
+    METER_DEVICE_CLASSES,
+    METER_UNITS,
     STATES,
+    TYPE_METER,
     TYPE_STATE,
 )
-from .coordinator import LocalVisionConfigEntry, StateCoordinator
+from .coordinator import (
+    LocalVisionConfigEntry,
+    MeterConfigEntry,
+    StateConfigEntry,
+    StateCoordinator,
+)
 from .detection import ROI_ERRORS, async_check_frame, region_to_roi
 from .frame_source import FrameUnavailable, async_fetch_frame
+from .meter_reader import (
+    PREVIEW_SIDE,
+    calibrate,
+    layout_rois,
+    read_once,
+    rotate,
+    status,
+    suggest,
+)
 from .preview import async_preview_url
 from .taught_frames import EntryClosed
 
@@ -89,6 +121,90 @@ REGION_SCHEMA = probatio.Schema(
         probatio.Required(CONF_BOTTOM): PERCENT,
     }
 )
+
+
+METER_SCHEMA = probatio.Schema(
+    {
+        probatio.Required(CONF_ENTITY_ID): CAMERA_SELECTOR,
+        probatio.Required(
+            CONF_DEVICE_CLASS, default=METER_DEVICE_CLASSES[0]
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=list(METER_DEVICE_CLASSES),
+                mode=selector.SelectSelectorMode.LIST,
+                translation_key="meter_device_class",
+            )
+        ),
+        probatio.Required(CONF_NAME): selector.TextSelector(),
+    }
+)
+
+
+def _count(minimum: int, maximum: int) -> selector.NumberSelector:
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=minimum, max=maximum, step=1, mode=selector.NumberSelectorMode.BOX
+        )
+    )
+
+
+DIGITS_SCHEMA = REGION_SCHEMA.extend(
+    {
+        probatio.Required(CONF_WHEELS): _count(1, MAX_WHEELS),
+        probatio.Required(CONF_DECIMAL_WHEELS, default=0): _count(0, MAX_WHEELS),
+        probatio.Required(CONF_DIAL_COUNT, default=0): _count(0, MAX_DIALS),
+        probatio.Required(CONF_ROTATION, default=0): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-180,
+                max=180,
+                step=0.1,
+                mode=selector.NumberSelectorMode.BOX,
+                unit_of_measurement="°",
+            )
+        ),
+    }
+)
+
+DIAL_SCHEMA = REGION_SCHEMA.extend(
+    {
+        probatio.Required(
+            CONF_COUNTERCLOCKWISE, default=False
+        ): selector.BooleanSelector(),
+    }
+)
+
+
+def _unit_schema(device_class: str) -> probatio.Schema:
+    units = METER_UNITS[device_class]
+    return probatio.Schema(
+        {
+            probatio.Required(CONF_UNIT, default=units[0]): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=units, mode=selector.SelectSelectorMode.DROPDOWN
+                )
+            ),
+            probatio.Optional(CONF_MAX_RATE): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0, step="any", mode=selector.NumberSelectorMode.BOX
+                )
+            ),
+        }
+    )
+
+
+def _region(user_input: Mapping[str, Any]) -> dict[str, float]:
+    return {
+        side: user_input[side]
+        for side in (CONF_LEFT, CONF_TOP, CONF_RIGHT, CONF_BOTTOM)
+    }
+
+
+def _region_error(region: Mapping[str, float]) -> str | None:
+    try:
+        region_to_roi(region)
+    except RoiError as err:
+        return ROI_ERRORS[err.axis]
+    return None
 
 
 def _teach_schema(device_class: str) -> probatio.Schema:
@@ -136,6 +252,9 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the flow."""
         self._options: dict[str, Any] = {}
         self._frame = b""
+        # Regions to suggest in the forms, from the finder or a former pass.
+        self._suggested: dict[str, Any] = {}
+        self._dial = 0
 
     @staticmethod
     @callback
@@ -144,6 +263,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         config_entry: LocalVisionConfigEntry,
     ) -> OptionsFlow:
         """Get the options flow."""
+        if config_entry.options[CONF_TYPE] == TYPE_METER:
+            return MeterOptionsFlow()
         return StateOptionsFlow()
 
     @override
@@ -151,7 +272,9 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Choose what to recognize."""
-        return self.async_show_menu(step_id="user", menu_options=[TYPE_STATE])
+        return self.async_show_menu(
+            step_id="user", menu_options=[TYPE_STATE, TYPE_METER]
+        )
 
     async def async_step_state(
         self, user_input: dict[str, Any] | None = None
@@ -222,11 +345,209 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         name = self._options.pop(CONF_NAME)
         return self.async_create_entry(title=name, data={}, options=self._options)
 
+    async def async_step_meter(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick the camera that shows the meter."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                frame = await async_fetch_frame(self.hass, user_input[CONF_ENTITY_ID])
+            except FrameUnavailable:
+                errors["base"] = "cannot_connect"
+            else:
+                try:
+                    await self.hass.async_add_executor_job(load_image, frame)
+                except ImageError:
+                    errors["base"] = "invalid_frame"
+                else:
+                    self._frame = frame
+                    self._options = {CONF_TYPE: TYPE_METER, **user_input}
+                    return await self.async_step_meter_unit()
+        return self.async_show_form(
+            step_id="meter",
+            data_schema=self.add_suggested_values_to_schema(METER_SCHEMA, user_input),
+            errors=errors,
+        )
+
+    async def async_step_meter_unit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the unit the meter counts in."""
+        if user_input is not None:
+            unit = user_input[CONF_UNIT]
+            self._options[CONF_UNIT] = unit
+            self._options[CONF_MAX_RATE] = user_input.get(
+                CONF_MAX_RATE, DEFAULT_MAX_RATES[unit]
+            )
+            return await self.async_step_meter_regions()
+        return self.async_show_form(
+            step_id="meter_unit",
+            data_schema=_unit_schema(self._options[CONF_DEVICE_CLASS]),
+        )
+
+    async def async_step_meter_regions(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Offer the region suggestion before the forms."""
+        return self.async_show_menu(
+            step_id="meter_regions",
+            menu_options=["digits", "suggest"],
+            description_placeholders={
+                "preview": await self._async_meter_preview(self._suggested)
+            },
+        )
+
+    async def async_step_suggest(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Let the alpha finder fill in the regions."""
+        try:
+            suggestion = await self.hass.async_add_executor_job(suggest, self._frame)
+        except Exception:
+            LOGGER.exception("The region finder failed")
+            suggestion = None
+        if suggestion is None:
+            return await self.async_step_digits(errors={"base": "no_suggestion"})
+        self._suggested = suggestion
+        return await self.async_step_digits()
+
+    async def async_step_digits(
+        self,
+        user_input: dict[str, Any] | None = None,
+        errors: dict[str, str] | None = None,
+    ) -> ConfigFlowResult:
+        """Set the window with the counter wheels."""
+        errors = errors or {}
+        if user_input is not None:
+            region = _region(user_input)
+            wheels = int(user_input[CONF_WHEELS])
+            decimal_wheels = int(user_input[CONF_DECIMAL_WHEELS])
+            if error := _region_error(region):
+                errors["base"] = error
+            elif decimal_wheels > wheels:
+                errors["base"] = "too_many_decimal_wheels"
+            else:
+                digits = {
+                    CONF_DIGITS: region,
+                    CONF_ROTATION: user_input[CONF_ROTATION],
+                    CONF_WHEELS: wheels,
+                    CONF_DECIMAL_WHEELS: decimal_wheels,
+                }
+                self._options |= {**digits, CONF_DIALS: []}
+                # Former dials stay suggested for the dial forms.
+                dial_count = int(user_input[CONF_DIAL_COUNT])
+                dials = [*self._suggested.get(CONF_DIALS, []), *[{}] * dial_count]
+                self._suggested |= {**digits, CONF_DIALS: dials[:dial_count]}
+                self._dial = 0
+                if dial_count:
+                    return await self.async_step_dial()
+                return await self.async_step_meter_confirm()
+        suggested = user_input or {
+            **self._suggested.get(CONF_DIGITS, DEFAULT_REGION),
+            CONF_ROTATION: self._suggested.get(CONF_ROTATION, 0),
+            CONF_WHEELS: self._suggested.get(CONF_WHEELS),
+            CONF_DECIMAL_WHEELS: self._suggested.get(CONF_DECIMAL_WHEELS, 0),
+            CONF_DIAL_COUNT: len(self._suggested.get(CONF_DIALS, [])),
+        }
+        region = _region(suggested)
+        preview: dict[str, Any] = {CONF_ROTATION: suggested[CONF_ROTATION]}
+        if _region_error(region) is None:
+            preview[CONF_DIGITS] = region
+        return self.async_show_form(
+            step_id="digits",
+            data_schema=self.add_suggested_values_to_schema(DIGITS_SCHEMA, suggested),
+            errors=errors,
+            description_placeholders={
+                "preview": await self._async_meter_preview(preview)
+            },
+        )
+
+    async def async_step_dial(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the region of one pointer dial."""
+        errors: dict[str, str] = {}
+        dials = self._options[CONF_DIALS]
+        if user_input is not None:
+            if error := _region_error(_region(user_input)):
+                errors["base"] = error
+            else:
+                dials.append(user_input)
+                self._suggested[CONF_DIALS][self._dial] = user_input
+                self._dial += 1
+                if self._dial < len(self._suggested[CONF_DIALS]):
+                    return await self.async_step_dial()
+                return await self.async_step_meter_confirm()
+        suggested = user_input or self._suggested[CONF_DIALS][self._dial]
+        return self.async_show_form(
+            step_id="dial",
+            data_schema=self.add_suggested_values_to_schema(DIAL_SCHEMA, suggested),
+            errors=errors,
+            description_placeholders={
+                "number": str(self._dial + 1),
+                "count": str(len(self._suggested[CONF_DIALS])),
+                "preview": await self._async_meter_preview(self._options),
+            },
+        )
+
+    async def async_step_meter_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the regions and what the meter reads now."""
+        self._options.pop(CONF_CALIBRATION, None)
+        try:
+            calibration = await self.hass.async_add_executor_job(
+                calibrate, self._frame, self._options
+            )
+            reading = await self.hass.async_add_executor_job(
+                read_once, self._frame, {**self._options, CONF_CALIBRATION: calibration}
+            )
+        except ImageError, BlankFrameError:
+            result = await self._async_status_label("blank")
+        except BackendError:
+            LOGGER.exception("The meter reader failed")
+            result = await self._async_status_label("unknown")
+        else:
+            self._options[CONF_CALIBRATION] = calibration
+            result = f"{reading.candidate} ({await self._async_status_label(status(reading))})"
+        return self.async_show_menu(
+            step_id="meter_confirm",
+            menu_options=["meter_finish", "digits"],
+            description_placeholders={
+                "preview": await self._async_meter_preview(self._options),
+                "reading": result,
+            },
+        )
+
+    async def async_step_meter_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the meter entry."""
+        name = self._options.pop(CONF_NAME)
+        return self.async_create_entry(title=name, data={}, options=self._options)
+
+    async def _async_meter_preview(self, options: Mapping[str, Any]) -> str:
+        frame = self._frame
+        if rotation := options.get(CONF_ROTATION):
+            frame = await self.hass.async_add_executor_job(rotate, frame, rotation)
+        return await async_preview_url(
+            self.hass, frame, layout_rois(options), max_side=PREVIEW_SIDE
+        )
+
+    async def _async_status_label(self, key: str) -> str:
+        translations = await translation.async_get_translations(
+            self.hass, self.hass.config.language, "selector", {DOMAIN}
+        )
+        return translations.get(
+            f"component.{DOMAIN}.selector.reading_status.options.{key}", key
+        )
+
 
 class StateOptionsFlow(OptionsFlow):
     """Teach and remove reference frames."""
 
-    config_entry: LocalVisionConfigEntry
+    config_entry: StateConfigEntry
 
     def __init__(self) -> None:
         """Initialize the flow."""
@@ -348,4 +669,42 @@ class StateOptionsFlow(OptionsFlow):
                 }
             ),
             errors=errors,
+        )
+
+
+class MeterOptionsFlow(OptionsFlow):
+    """Correct the value of a meter."""
+
+    config_entry: MeterConfigEntry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Go to the only option."""
+        return await self.async_step_correct()
+
+    async def async_step_correct(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the value shown on the meter."""
+        if self.config_entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="not_loaded")
+        coordinator = self.config_entry.runtime_data
+        if user_input is not None:
+            await coordinator.async_correct(user_input[CONF_VALUE])
+            return self.async_abort(reason="correct_successful")
+        return self.async_show_form(
+            step_id="correct",
+            data_schema=self.add_suggested_values_to_schema(
+                probatio.Schema(
+                    {
+                        probatio.Required(CONF_VALUE): selector.NumberSelector(
+                            selector.NumberSelectorConfig(
+                                min=0, step="any", mode=selector.NumberSelectorMode.BOX
+                            )
+                        )
+                    }
+                ),
+                {CONF_VALUE: coordinator.value},
+            ),
         )

@@ -3,7 +3,7 @@
 from collections.abc import Generator
 from functools import partial
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import (
@@ -17,14 +17,29 @@ from pytest_homeassistant_custom_component.common import (
 from pytest_homeassistant_custom_component.syrupy import HomeAssistantSnapshotExtension
 from syrupy.assertion import SnapshotAssertion
 from tarsius import EdgeBackend, StateDetector
+from tarsius.meter import Calibration, MeterReader
+from tarsius.meter.finder import Suggestion
 
-from custom_components.local_vision.const import CONF_TYPE, DOMAIN, TYPE_STATE
+from custom_components.local_vision.const import (
+    CONF_CALIBRATION,
+    CONF_DECIMAL_WHEELS,
+    CONF_DIALS,
+    CONF_DIGITS,
+    CONF_MAX_RATE,
+    CONF_ROTATION,
+    CONF_TYPE,
+    CONF_UNIT,
+    CONF_WHEELS,
+    DOMAIN,
+    TYPE_METER,
+    TYPE_STATE,
+)
 from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_ENTITY_ID, CONF_REGION, Platform
 from homeassistant.core import HomeAssistant
 
-from . import CAMERA, REGION, TEST_DOMAIN, FakeCamera
+from . import CAMERA, DIGITS, REGION, TEST_DOMAIN, FakeCamera, meter_reading
 
 
 @pytest.fixture(autouse=True)
@@ -103,5 +118,58 @@ def edges_backend() -> Generator[None]:
     with patch(
         "custom_components.local_vision.detection.StateDetector",
         partial(StateDetector, backend=EdgeBackend()),
+    ):
+        yield
+
+
+@pytest.fixture
+def meter_entry() -> MockConfigEntry:
+    """Return a configured water meter with three wheels after the point."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Water meter",
+        entry_id="01JLOCALVISIONMETER00000000",
+        minor_version=2,
+        options={
+            CONF_TYPE: TYPE_METER,
+            CONF_ENTITY_ID: CAMERA,
+            CONF_DEVICE_CLASS: "water",
+            CONF_UNIT: "m³",
+            CONF_MAX_RATE: 10.0,
+            CONF_DIGITS: DIGITS,
+            CONF_ROTATION: 0,
+            CONF_WHEELS: 8,
+            CONF_DECIMAL_WHEELS: 3,
+            CONF_DIALS: [],
+            CONF_CALIBRATION: Calibration().as_dict(),
+        },
+    )
+
+
+@pytest.fixture
+def mock_meter_reader() -> Generator[Mock]:
+    """Replace the bundled wheel readers; the test sets what they read."""
+    with (
+        patch.object(MeterReader, "load"),
+        patch.object(MeterReader, "calibrate", return_value=Calibration()),
+        patch.object(MeterReader, "read", return_value=meter_reading(123.456)) as read,
+    ):
+        yield read
+
+
+@pytest.fixture
+def mock_finder() -> Generator[Mock]:
+    """Replace the alpha region finder."""
+    with patch("tarsius.meter.finder.suggest", return_value=Suggestion()) as suggest:
+        yield suggest
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    """Enable entities that are disabled by default."""
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        return_value=True,
+        new_callable=PropertyMock,
     ):
         yield

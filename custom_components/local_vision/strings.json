@@ -10,9 +10,103 @@
       "invalid_frame": "The camera returned an image that Home Assistant can't read. Check the camera's settings and try again.",
       "invalid_horizontal_range": "The left edge must be smaller than the right edge.",
       "invalid_vertical_range": "The top edge must be smaller than the bottom edge.",
+      "no_suggestion": "No meter was found in the frame. Enter the regions yourself.",
+      "too_many_decimal_wheels": "There can't be more wheels after the decimal point than wheels.",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "step": {
+      "dial": {
+        "data": {
+          "bottom": "[%key:component::local_vision::config::step::region::data::bottom%]",
+          "counterclockwise": "Turns counterclockwise",
+          "left": "[%key:component::local_vision::config::step::region::data::left%]",
+          "right": "[%key:component::local_vision::config::step::region::data::right%]",
+          "top": "[%key:component::local_vision::config::step::region::data::top%]"
+        },
+        "data_description": {
+          "bottom": "[%key:component::local_vision::config::step::region::data_description::bottom%]",
+          "counterclockwise": "Turn this on if the numbers on the dial run counterclockwise.",
+          "left": "[%key:component::local_vision::config::step::region::data_description::left%]",
+          "right": "[%key:component::local_vision::config::step::region::data_description::right%]",
+          "top": "[%key:component::local_vision::config::step::region::data_description::top%]"
+        },
+        "description": "![Current frame with the regions outlined]({preview})\n\nPut the region around dial {number}, centered on its axis. Dial 1 counts the largest steps, for example ×0.1, the next one ten times smaller.",
+        "title": "Pointer dial {number} of {count}"
+      },
+      "digits": {
+        "data": {
+          "bottom": "[%key:component::local_vision::config::step::region::data::bottom%]",
+          "decimal_wheels": "Wheels after the decimal point",
+          "dial_count": "Number of pointer dials",
+          "left": "[%key:component::local_vision::config::step::region::data::left%]",
+          "right": "[%key:component::local_vision::config::step::region::data::right%]",
+          "rotation": "Rotation",
+          "top": "[%key:component::local_vision::config::step::region::data::top%]",
+          "wheels": "Number of wheels"
+        },
+        "data_description": {
+          "bottom": "[%key:component::local_vision::config::step::region::data_description::bottom%]",
+          "decimal_wheels": "The rightmost wheels that count fractions, often red or behind a separator. 0 if all wheels count whole units.",
+          "dial_count": "Pointer dials that count below the last wheel, for example ×0.1 and ×0.01. 0 if the meter has none.",
+          "left": "[%key:component::local_vision::config::step::region::data_description::left%]",
+          "right": "[%key:component::local_vision::config::step::region::data_description::right%]",
+          "rotation": "Degrees counterclockwise that turn the frame so the digits are level. The preview shows the turned frame, and the regions are edges in it. 0 if the digits are level already.",
+          "top": "[%key:component::local_vision::config::step::region::data_description::top%]",
+          "wheels": "All wheels in the region, also those after the decimal point."
+        },
+        "description": "![Current frame with the regions outlined]({preview})\n\nPut the region tightly around all counter wheels, from the first to the last digit, without the frame around them. 0 is the left or top edge of the frame, 100 the right or bottom edge. If the digits are not level, set the rotation first; the next preview shows the turned frame.",
+        "title": "Counter wheels"
+      },
+      "meter": {
+        "data": {
+          "device_class": "Meter",
+          "entity_id": "[%key:component::local_vision::config::step::state::data::entity_id%]",
+          "name": "[%key:common::config_flow::data::name%]"
+        },
+        "data_description": {
+          "device_class": "What the meter counts. This sets the units and where the sensor fits in the Energy dashboard.",
+          "entity_id": "The camera that shows the meter.",
+          "name": "For example, Water meter. The sensor is added to the camera's device, so the device name is shown in front."
+        },
+        "description": "Create a sensor that reads a meter with counter wheels and, if it has them, pointer dials. Everything runs locally. The camera should look straight at the meter and the digits should be sharp and lit, also at night.",
+        "title": "Meter reading"
+      },
+      "meter_confirm": {
+        "description": "![Current frame with the regions outlined]({preview})\n\nRead from this frame: {reading}\n\nThe sensor only takes readings it is sure of, and never a value lower than the last one.",
+        "menu_option_descriptions": {
+          "digits": "Go back and adjust the regions.",
+          "meter_finish": "Create the sensor with these regions."
+        },
+        "menu_options": {
+          "digits": "Change the regions",
+          "meter_finish": "Use these regions"
+        },
+        "title": "Check the regions"
+      },
+      "meter_regions": {
+        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. You can enter the regions yourself, or let Home Assistant suggest them and adjust them afterwards.",
+        "menu_option_descriptions": {
+          "digits": "Enter the edges of each region in percent of the frame.",
+          "suggest": "Look for the meter in the current frame and fill in the regions and the rotation. This is an early version that can miss the meter or mark something else, such as a serial number, so check every region afterwards."
+        },
+        "menu_options": {
+          "digits": "Enter the regions",
+          "suggest": "Suggest regions (alpha)"
+        },
+        "title": "Meter regions"
+      },
+      "meter_unit": {
+        "data": {
+          "max_rate": "Maximum increase per hour",
+          "unit": "Unit"
+        },
+        "data_description": {
+          "max_rate": "A reading that rises faster than this is rejected as a misread. Leave it empty for a value well above a household's use, such as 10 m³ for water or gas and 100 kWh for electricity. A higher value lets more misreads through.",
+          "unit": "The unit the counter wheels count in."
+        },
+        "description": "Choose the unit printed on the meter.",
+        "title": "Unit"
+      },
       "region": {
         "data": {
           "bottom": "Bottom",
@@ -56,13 +150,38 @@
         "title": "State of an area"
       },
       "user": {
-        "title": "What should be recognized?",
         "description": "Everything runs locally, no image leaves Home Assistant.",
+        "menu_option_descriptions": {
+          "meter": "A sensor with the reading of a water, gas or electricity meter with counter wheels, for the Energy dashboard.",
+          "state": "A binary sensor for a part of the camera view, such as a garage door that is open or closed. You teach it with example frames."
+        },
         "menu_options": {
+          "meter": "Meter reading",
           "state": "State of an area"
         },
-        "menu_option_descriptions": {
-          "state": "A binary sensor for a part of the camera view, such as a garage door that is open or closed. You teach it with example frames."
+        "title": "What should be recognized?"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "reading_confidence": {
+        "name": "{meter} reading confidence"
+      },
+      "reading_status": {
+        "name": "{meter} reading status",
+        "state": {
+          "accepted": "[%key:component::local_vision::selector::reading_status::options::accepted%]",
+          "decreased": "[%key:component::local_vision::selector::reading_status::options::decreased%]",
+          "fault": "[%key:component::local_vision::selector::reading_status::options::fault%]",
+          "inconsistent": "[%key:component::local_vision::selector::reading_status::options::inconsistent%]",
+          "low_confidence": "[%key:component::local_vision::selector::reading_status::options::low_confidence%]",
+          "too_fast": "[%key:component::local_vision::selector::reading_status::options::too_fast%]"
+        },
+        "state_attributes": {
+          "candidate": {
+            "name": "Value read"
+          }
         }
       }
     }
@@ -81,6 +200,7 @@
   "options": {
     "abort": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "correct_successful": "The value was set. The next readings are checked against it.",
       "invalid_frame": "[%key:component::local_vision::config::error::invalid_frame%]",
       "not_loaded": "The sensor is not loaded right now. Check it under **Settings** > **Devices & services** > **Helpers**, then open the options again.",
       "remove_successful": "The selected frames were removed.",
@@ -93,6 +213,16 @@
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "step": {
+      "correct": {
+        "data": {
+          "value": "Value"
+        },
+        "data_description": {
+          "value": "The reading on the meter, in the unit of the sensor."
+        },
+        "description": "Enter the value shown on the meter, for example after a wrong reading or a new meter. The value can also be lower than the current one, statistics then count from it as from a new meter.",
+        "title": "Correct the value"
+      },
       "init": {
         "menu_option_descriptions": {
           "remove": "Remove frames taught with the wrong state or that no longer match the view.",
@@ -133,6 +263,25 @@
         "occupancy": "[%key:component::binary_sensor::entity_component::occupancy::name%]",
         "opening": "[%key:component::binary_sensor::entity_component::opening::name%]",
         "window": "[%key:component::binary_sensor::entity_component::window::name%]"
+      }
+    },
+    "meter_device_class": {
+      "options": {
+        "energy": "[%key:component::sensor::entity_component::energy::name%]",
+        "gas": "[%key:component::sensor::entity_component::gas::name%]",
+        "water": "[%key:component::sensor::entity_component::water::name%]"
+      }
+    },
+    "reading_status": {
+      "options": {
+        "accepted": "Accepted",
+        "blank": "The camera shows nothing",
+        "decreased": "Lower than before",
+        "fault": "Camera problem",
+        "inconsistent": "Wheels disagree",
+        "low_confidence": "Not sure",
+        "too_fast": "Rose too fast",
+        "unknown": "[%key:common::config_flow::error::unknown%]"
       }
     },
     "state_door": {

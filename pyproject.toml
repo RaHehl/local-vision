@@ -9,7 +9,7 @@ license = "Apache-2.0"
 test = [
     "PyTurboJPEG==1.8.3",
     "pytest-homeassistant-custom-component==0.13.373",
-    "tarsius==0.4.0",
+    "tarsius==0.5.0",
 ]
 
 [tool.uv]
