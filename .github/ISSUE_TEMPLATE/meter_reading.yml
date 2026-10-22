@@ -1,0 +1,30 @@
+name: Meter reading
+description: Tell us how the experimental meter type does on your meter.
+labels: [report, meter]
+body:
+  - type: input
+    id: meter
+    attributes:
+      label: Meter
+      description: Kind and model, number of wheels, red wheels after the point, number of pointer dials.
+      placeholder: Water meter, 5 black wheels, 4 dials
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: Automatic setup
+      options:
+        - Found the counter and the dials
+        - Found some regions, I corrected them
+        - Found nothing or the wrong place
+        - I entered the regions myself
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: How the sensor's value compares with the meter over a few days, and the reading statuses you saw.
+    validations:
+      required: true

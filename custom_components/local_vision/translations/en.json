@@ -8,7 +8,7 @@
     },
     "create_entry": {
       "default": "The sensor stays unknown until you teach it both states. Go to **Settings** > **Devices & services** > **Helpers**, select the sensor, select the settings icon, then **Local vision options**. Teach one frame of each state, for example door open and door closed. If a state is not visible right now, teach it later.",
-      "meter": "The sensor starts from the value you confirmed. It takes a reading only when the wheels and dials are read clearly, agree with each other, and fit the last accepted value: not lower, and not rising faster than the maximum increase per hour. A lower value is taken once three readings in a row agree on it. To set the value yourself, for example after a new meter, open the helper's options."
+      "meter": "**Experimental:** check the value against your meter for the first days. The sensor starts from the value you confirmed. It takes a reading only when the wheels and dials are read clearly, agree with each other, and fit the last accepted value: not lower, and not rising faster than the maximum increase per hour. A lower value is taken once three readings in a row agree on it. To set the value yourself, for example after a new meter, open the helper's options."
     },
     "error": {
       "blank_frame": "The camera shows nothing, for example because it is offline or covered. Check the camera and try again.",
@@ -18,7 +18,7 @@
       "invalid_horizontal_range": "The left edge must be smaller than the right edge.",
       "invalid_max_rate": "The maximum increase must be above 0.",
       "invalid_vertical_range": "The top edge must be smaller than the bottom edge.",
-      "no_suggestion": "No meter was found in the frame. Enter the regions yourself.",
+      "no_suggestion": "The counter wasn't found automatically. Enter the regions yourself; the frame below helps you place them.",
       "too_many_decimal_wheels": "There can't be more wheels after the decimal point than wheels.",
       "unknown": "Unexpected error"
     },
@@ -76,8 +76,8 @@
           "entity_id": "The camera that shows the meter.",
           "name": "For example, Water meter. The sensor is added to the camera's device, so the device name is shown in front."
         },
-        "description": "Create a sensor that reads a meter with counter wheels and, if it has them, pointer dials. Everything runs locally. The camera should look straight at the meter and the digits should be sharp and lit, also at night.",
-        "title": "Meter reading"
+        "description": "Create a sensor that reads a meter with counter wheels and, if it has them, pointer dials. Everything runs locally. The camera should look straight at the meter and the digits should be sharp and lit, also at night.\n\n**Experimental:** check the value against your meter for the first days.",
+        "title": "Meter reading (experimental)"
       },
       "meter_confirm": {
         "description": "![Current frame with the regions outlined]({preview})\n\nRead from this frame: {reading}\n\nThe sensor only takes readings it is sure of and that fit the last accepted value.",
@@ -94,14 +94,14 @@
         "title": "Check the regions"
       },
       "meter_regions": {
-        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. You can enter the regions yourself, or let Home Assistant suggest them and adjust them afterwards.",
+        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. The easiest way is to let Home Assistant find them in the current frame; you check and adjust the regions afterwards.",
         "menu_option_descriptions": {
-          "digits": "Enter the edges of each region in percent of the frame.",
-          "suggest": "Look for the meter in the current frame and fill in the regions and the rotation. This is an early version that can miss the meter or mark something else, such as a serial number, so check every region afterwards."
+          "suggest": "Look for the counter window and the dials in the current frame and fill in the regions and the rotation. Check every region afterwards: it can miss the meter or mark something else, such as a serial number.",
+          "digits": "Enter the edges of each region in percent of the frame."
         },
         "menu_options": {
-          "digits": "Enter the regions",
-          "suggest": "Suggest regions (alpha)"
+          "suggest": "Find the counter automatically (recommended)",
+          "digits": "Enter the regions yourself"
         },
         "title": "Meter regions"
       },
@@ -172,12 +172,12 @@
       "user": {
         "description": "Everything runs locally, no image leaves Home Assistant.",
         "menu_option_descriptions": {
-          "meter": "A sensor with the reading of a water, gas or electricity meter with counter wheels, for the Energy dashboard.",
-          "state": "A binary sensor for a part of the camera view, such as a garage door that is open or closed. You teach it with example frames."
+          "meter": "Experimental: a sensor with the reading of a water, gas or electricity meter with counter wheels and pointer dials, for the Energy dashboard.",
+          "state": "Simple and quick: a binary sensor for a part of the camera view, such as a garage door that is open or closed or a car that is parked. You teach it with example frames."
         },
         "menu_options": {
-          "meter": "Meter reading",
-          "state": "State of an area"
+          "meter": "Meter reading (experimental)",
+          "state": "State of an area, such as a garage door"
         },
         "title": "What should be recognized?"
       }

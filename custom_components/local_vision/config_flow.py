@@ -473,7 +473,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         """Offer the region suggestion before the forms."""
         return self.async_show_menu(
             step_id="meter_regions",
-            menu_options=["digits", "suggest"],
+            # Finding the counter is the easy way; the forms stay open after it.
+            menu_options=["suggest", "digits"],
             description_placeholders={
                 "preview": await self._async_meter_preview(self._suggested)
             },

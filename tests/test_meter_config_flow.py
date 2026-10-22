@@ -70,6 +70,8 @@ async def _to_regions(hass: HomeAssistant, unit: dict[str, Any] | None = None) -
     )
     assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "meter_regions"
+    # Finding the counter automatically comes first.
+    assert result["menu_options"] == ["suggest", "digits"]
     return flow_id
 
 

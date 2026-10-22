@@ -4,12 +4,14 @@
 
 # Local vision
 
-Local image recognition for Home Assistant cameras, as helpers. Recognition runs on the Home Assistant machine with [tarsius](https://github.com/RaHehl/tarsius). No cloud service, no account, no image leaves your network.
+Is the garage door open? Is the car in the garage? Point a camera at it, show Local vision one frame of each state, and you get a binary sensor for it. No cloud, no account, no training: recognition runs on your Home Assistant machine with [tarsius](https://github.com/RaHehl/tarsius), and no image leaves your network.
+
+A personal project, not an official Home Assistant integration.
 
 Two helper types:
 
-- **State of an area**: a binary sensor for a part of the camera view, such as a garage door that is open or closed, a car in the driveway or a mailbox flag. You teach it with frames from the camera, there is no training.
-- **Meter reading**: a sensor with the reading of a water, gas or electricity meter with counter wheels and optional pointer dials, ready for the Energy dashboard.
+- **State of an area**: the simple one. A binary sensor for a part of the camera view: a garage door open or closed, a car parked or not, a gate, a mailbox flag. You teach it with frames from the camera.
+- **Meter reading (experimental)**: a sensor with the reading of a water, gas or electricity meter, ready for the Energy dashboard. It reads the counter wheels and, on analog meters, the pointer dials (×0.1 down to ×0.0001) together with them. Home Assistant finds the counter and the dials in the camera frame for you.
 
 ## Installation
 
@@ -21,23 +23,27 @@ Manual installation: copy `custom_components/local_vision` into the `custom_comp
 
 Then go to **Settings** > **Devices & services** > **Helpers** > **Create helper** > **Local vision**.
 
-## State of an area
+## State of an area: garage door, car, gate
 
-1. Pick the camera, the kind of sensor (door, garage door, occupancy, opening, window) and a name.
-2. Set the region in percent of the frame. The next step shows it outlined on the current frame.
-3. Open the helper's options and teach the current frame with the state it shows. Teach at least one frame of each state. More frames in different light, such as day, night and with the lights on, make it more reliable.
+1. Pick the camera, the kind of sensor (garage door, door, occupancy, opening, window) and a name.
+2. Set the region in percent of the frame, for example around the garage door. The next step shows it outlined on the current frame.
+3. Open the helper's options and teach the current frame with the state it shows: door open, door closed. Teach at least one frame of each state. More frames in different light, such as day, night and with the lights on, make it more reliable.
 
 The sensor is unknown until both states are taught and while it is unsure. It is added to the camera's device. Taught frames can be removed in the options, for example after the camera was moved.
 
-## Meter reading
+## Meter reading (experimental)
+
+This helper type is experimental: check its value against your meter for the first days, and tell us how it does (see below).
 
 1. Pick the camera, what the meter counts (water, gas, energy) and a name. A gas meter that counts kWh is set up as energy.
 2. Choose the unit printed on the meter and, optionally, the maximum increase per hour. Left empty it is 4 m³ for water, 6 m³ for gas and 50 kWh for electricity, or the same in the chosen unit.
-3. Enter the regions or let Home Assistant suggest them (see below).
-4. Set the window with the counter wheels: its edges in percent, the rotation that levels the digits, the number of wheels, how many of them count after the decimal point, and the number of pointer dials.
-5. Set the region of each dial, most significant first, and whether it turns counterclockwise.
+3. Choose **Find the counter automatically**: Home Assistant looks for the counter window and the pointer dials in the current frame and fills in the forms, including the rotation. If it finds nothing, you enter the regions yourself.
+4. Check the window with the counter wheels: its edges in percent, the rotation that levels the digits, the number of wheels, how many of them count after the decimal point, and the number of pointer dials.
+5. Check the region of each dial, most significant first, and whether it turns counterclockwise.
 6. Check the regions and the value read from the current frame.
 7. Confirm the value the meter shows now, or correct it. Every later reading is checked against it.
+
+Pointer dials are read together with the wheels: on a water meter with a ×0.1, ×0.01, ×0.001 and ×0.0001 dial the sensor shows tenths of a litre, and the dials also tell which way an upper wheel near its carry goes.
 
 The sensor has the state class `total` and the device class you chose, so it can be added to the Energy dashboard. It only takes readings that pass these checks:
 
@@ -54,9 +60,9 @@ Two diagnostic sensors show what happened: **reading status** (accepted, or why 
 
 To change the unit, the maximum increase or the regions, for example after the camera was moved, reconfigure the helper. The value is kept, unless the counter reads a different number afterwards, such as with another number of wheels; then the flow asks for it again.
 
-### Suggest regions (alpha)
+### Finding the counter
 
-The flow offers **Suggest regions (alpha)**: a small model looks for the counter window and the dials in the current frame and fills in the forms, including the rotation. It is an early version. It can miss the meter or mark something else, such as a printed serial number, and it does not count the wheels. Check every region before you continue. On a Home Assistant Green it can take a few seconds. It is never required, you can always enter the regions yourself.
+The automatic setup is part of the experimental meter type. A small model marks the counter window and the dials; it can miss the meter or mark something else, such as a printed serial number, and it does not count the wheels. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
 
 ## Updates
 
@@ -72,6 +78,15 @@ Both helper types read a frame every 5 minutes. To read more or less often, disa
 ## Privacy
 
 Everything runs locally. Frames are fetched from the camera entity, compared on the Home Assistant machine and discarded. Taught frames of state sensors are stored as JPEG files in `config/local_vision/<entry id>/`, so they are part of Home Assistant backups, and are deleted with the helper. Meter helpers store the last accepted value, when it was read, what the checks remember and grey-level statistics of each wheel and dial, no images.
+
+## Help make it better
+
+Local vision gets better with every camera and meter it meets. You can help without writing code:
+
+- **Tell us how it works for you**: open an issue with the result of a state helper or a meter reading, good or bad. There are short forms for both.
+- **Share frames of your meter**: crops of the counter and dials help train the meter models. Crop to the counter, blur or cover serial numbers and anything that identifies you, and share them under CC0 with the meter sample form.
+- **Try the experimental parts** on other meter types: gas meters, electricity meters, meters with red wheels or many dials.
+- **Translations and code**: pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and the tests.
 
 ## Development
 

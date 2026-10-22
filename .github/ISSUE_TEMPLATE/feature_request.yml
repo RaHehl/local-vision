@@ -1,0 +1,11 @@
+name: Feature request
+description: Suggest something Local vision could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What you would like to do, and why.
+    validations:
+      required: true

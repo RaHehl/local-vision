@@ -1,0 +1,31 @@
+name: Meter sample
+description: Share frames of your meter to improve the models.
+labels: [sample]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you! Crop each frame to the counter and the dials, and blur or cover serial numbers, addresses and anything else that identifies you or your home.
+  - type: input
+    id: meter
+    attributes:
+      label: Meter
+      description: Kind and model, number of wheels, red wheels after the point, number of pointer dials.
+    validations:
+      required: true
+  - type: textarea
+    id: frames
+    attributes:
+      label: Frames
+      description: Attach the cropped frames, and the value the meter shows in each, if you know it.
+    validations:
+      required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: License and privacy
+      options:
+        - label: I share these images under CC0 (public domain); anyone may use them for anything, also for training models.
+          required: true
+        - label: I removed serial numbers, addresses and anything else that identifies me or my home.
+          required: true

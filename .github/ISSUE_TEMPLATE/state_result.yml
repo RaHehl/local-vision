@@ -1,0 +1,23 @@
+name: State helper result
+description: Tell us how the state helper does on your camera, good or bad.
+labels: [report, state]
+body:
+  - type: input
+    id: watches
+    attributes:
+      label: What the helper watches
+      placeholder: Garage door, open or closed
+    validations:
+      required: true
+  - type: input
+    id: camera
+    attributes:
+      label: Camera
+      description: Model, resolution, day and night (infrared).
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: How many frames you taught per state, and how often the sensor was right, unsure or wrong.
+    validations:
+      required: true
