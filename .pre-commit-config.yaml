@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: translations
+        name: translations/en.json matches strings.json
+        entry: .venv/bin/python script/translations.py --check
+        language: system
+        files: ^custom_components/local_vision/(strings|translations/en)\.json$
+        pass_filenames: false
