@@ -795,3 +795,31 @@ async def test_damaged_detail_keeps_the_stored_value(
     # The stored 130.0 wins over the older confirmed 123.0: 123.456 is lower.
     assert _state(hass) == "130.0"
     assert "Keeping only the value of a damaged meter state" in caplog.text
+
+
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_cached_snapshot_cannot_confirm_a_rise(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    camera: FakeCamera,
+    meter_entry: MockConfigEntry,
+    mock_meter_reader: Mock,
+) -> None:
+    """An unsure rise of a step waits; the same bytes again are not read."""
+    await setup_integration(hass, meter_entry)
+    camera.live = False
+    mock_meter_reader.return_value = meter_reading(123.6, confidence=0.6)
+    await _poll(hass, freezer)
+    assert _state(hass) == "123.456"
+    assert _state(hass, STATUS_ENTITY_ID) == "rise_unconfirmed"
+    reads = mock_meter_reader.call_count
+
+    await _poll(hass, freezer)
+    assert mock_meter_reader.call_count == reads
+    assert _state(hass) == "123.456"
+    assert _state(hass, STATUS_ENTITY_ID) == "rise_unconfirmed"
+
+    camera.live = True
+    mock_meter_reader.return_value = meter_reading(123.61, confidence=0.6)
+    await _poll(hass, freezer)
+    assert _state(hass) == "123.61"

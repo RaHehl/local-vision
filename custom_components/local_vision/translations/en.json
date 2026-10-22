@@ -197,6 +197,7 @@
           "fault": "Camera problem",
           "inconsistent": "Wheels disagree",
           "low_confidence": "Not sure",
+          "rise_unconfirmed": "Waiting for a second reading",
           "too_fast": "Rose too fast",
           "unconfirmed": "Value not confirmed"
         },
@@ -350,6 +351,7 @@
         "fault": "Camera problem",
         "inconsistent": "Wheels disagree",
         "low_confidence": "Not sure",
+        "rise_unconfirmed": "Waiting for a second reading",
         "too_fast": "Rose too fast",
         "unconfirmed": "Value not confirmed",
         "unknown": "Unexpected error"

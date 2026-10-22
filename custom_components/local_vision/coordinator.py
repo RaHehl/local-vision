@@ -1,6 +1,7 @@
 """Coordinators reading camera frames."""
 
 import asyncio
+import hashlib
 from typing import Any, override
 
 from tarsius import BackendError, BlankFrameError, ImageError, Result, Status
@@ -119,6 +120,8 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
         self._store = store
         # Raw stored data, so fields written by newer versions survive a save.
         self._stored = stored
+        # Digest of the last frame read.
+        self._last_frame = b""
 
     @property
     def value(self) -> float | None:
@@ -131,6 +134,12 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
             # The camera may not be set up yet; refreshed once started.
             return self.data
         frame = await async_fetch_camera_frame(self.hass, self.config_entry)
+        digest = hashlib.sha256(frame).digest()
+        if digest == self._last_frame:
+            # A cached snapshot says nothing new and must not confirm a rise
+            # that waits for a second reading.
+            return self.data
+        self._last_frame = digest
         async with self._lock:
             return await self._async_read(frame)
 

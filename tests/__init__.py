@@ -84,12 +84,19 @@ class FakeCamera(Camera):
             identifiers={(TEST_DOMAIN, "garage")}, name="Garage camera"
         )
         self.frame: bytes | None = render_frame(car=True)
+        # Each snapshot differs in its trailing bytes, like a live camera's;
+        # off, the camera sends the same bytes again, like a cached one.
+        self.live = True
+        self._shots = 0
 
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Return the current frame; None means the camera has no image."""
-        return self.frame
+        if self.frame is None or not self.live:
+            return self.frame
+        self._shots += 1
+        return self.frame + b"\x00" * self._shots
 
 
 async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:

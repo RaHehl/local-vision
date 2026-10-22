@@ -64,7 +64,7 @@ To change the unit, the maximum increase or the regions, for example after the c
 
 ### Suggested regions
 
-The suggestion is part of the experimental meter type. It works best on a straight-on view of one meter; on varied photos of single wheel counters it found the counter about half of the time, and missed it on vertically mounted counters or picked a serial number or type label instead. A small model marks the counter window and the dials; it can miss the meter or mark something else, such as a printed serial number. It does not count the wheels or tell which dial is which: you enter the number of wheels, and the dial order is a guess, clockwise from twelve. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
+The suggestion is part of the experimental meter type. It works best on a straight-on view of one meter; on varied photos of single wheel counters it found the counter about half of the time, and missed it on vertically mounted counters or picked a serial number or type label instead. A small model marks the counter window and the dials. It does not count the wheels or tell which dial is which: you enter the number of wheels, and the dial order is a guess, clockwise from twelve. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
 
 ## Updates
 

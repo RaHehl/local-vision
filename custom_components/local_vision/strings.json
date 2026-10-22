@@ -197,6 +197,7 @@
           "fault": "[%key:component::local_vision::selector::reading_status::options::fault%]",
           "inconsistent": "[%key:component::local_vision::selector::reading_status::options::inconsistent%]",
           "low_confidence": "[%key:component::local_vision::selector::reading_status::options::low_confidence%]",
+          "rise_unconfirmed": "[%key:component::local_vision::selector::reading_status::options::rise_unconfirmed%]",
           "too_fast": "[%key:component::local_vision::selector::reading_status::options::too_fast%]",
           "unconfirmed": "[%key:component::local_vision::selector::reading_status::options::unconfirmed%]"
         },
@@ -350,6 +351,7 @@
         "fault": "Camera problem",
         "inconsistent": "Wheels disagree",
         "low_confidence": "Not sure",
+        "rise_unconfirmed": "Waiting for a second reading",
         "too_fast": "Rose too fast",
         "unconfirmed": "Value not confirmed",
         "unknown": "[%key:common::config_flow::error::unknown%]"
