@@ -226,7 +226,6 @@
   "issues": {
     "meter_disputed": {
       "title": "Check the value of {name}",
-      "description": "Since {since}, {name} reads {value} again and again, a whole digit below the last value {last}. Either a wheel is misread, or the last value was too high, for example after a typo. Look at the meter: select **Submit** and enter the value it shows.",
       "fix_flow": {
         "abort": {
           "not_loaded": "[%key:component::local_vision::options::abort::not_loaded%]"
@@ -239,7 +238,7 @@
             "data_description": {
               "value": "[%key:component::local_vision::options::step::correct::data_description::value%]"
             },
-            "description": "Enter the value {name} shows now. The next readings are checked against it.",
+            "description": "Since {since}, {name} reads {value} again and again, a whole digit below the last value {last}. Either a wheel is misread, or the last value was too high, for example after a typo. Look at the meter: enter the value it shows.",
             "title": "Value on the meter"
           }
         }
@@ -247,7 +246,6 @@
     },
     "meter_unconfirmed": {
       "title": "Confirm the value of {name}",
-      "description": "{name} has no confirmed value, so it can't check its readings and takes none. Select **Submit** and enter the value shown on the meter.",
       "fix_flow": {
         "abort": {
           "not_loaded": "[%key:component::local_vision::options::abort::not_loaded%]"
@@ -260,7 +258,7 @@
             "data_description": {
               "value": "[%key:component::local_vision::options::step::correct::data_description::value%]"
             },
-            "description": "Enter the value {name} shows now. The next readings are checked against it.",
+            "description": "{name} has no confirmed value, so it can't check its readings and takes none. Enter the value shown on the meter.",
             "title": "Value on the meter"
           }
         }

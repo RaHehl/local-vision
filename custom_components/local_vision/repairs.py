@@ -6,20 +6,25 @@ from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import issue_registry as ir
 
 from .config_flow import VALUE_SCHEMA
-from .const import CONF_VALUE
+from .const import CONF_VALUE, DOMAIN
 
 
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict[str, Any] | None
 ) -> RepairsFlow:
     """Create the flow that asks for the value on the meter."""
-    return MeterValueRepairFlow()
+    return MeterValueRepairFlow(issue_id)
 
 
 class MeterValueRepairFlow(RepairsFlow):
     """Set the value shown on the meter, like the correct-value option."""
+
+    def __init__(self, issue_id: str) -> None:
+        """Remember the issue, its text fills the step's description."""
+        self._issue_id = issue_id
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -45,5 +50,10 @@ class MeterValueRepairFlow(RepairsFlow):
             data_schema=self.add_suggested_values_to_schema(
                 VALUE_SCHEMA, {} if suggested is None else {CONF_VALUE: suggested}
             ),
-            description_placeholders={"name": entry.title},
+            description_placeholders=self._placeholders(entry.title),
         )
+
+    def _placeholders(self, name: str) -> dict[str, str]:
+        issue = ir.async_get(self.hass).async_get_issue(DOMAIN, self._issue_id)
+        placeholders = dict(issue.translation_placeholders or {}) if issue else {}
+        return placeholders | {"name": name}
