@@ -122,7 +122,6 @@ async def test_confidence_disabled_by_default(
         Rejection.FAULT,
         Rejection.LOW_CONFIDENCE,
         Rejection.INCONSISTENT,
-        Rejection.AMBIGUOUS,
     ],
 )
 @pytest.mark.usefixtures("camera")
@@ -143,6 +142,49 @@ async def test_rejected_reading_keeps_value(
     assert _state(hass) == "123.456"
     assert _state(hass, STATUS_ENTITY_ID) == rejection.value
     assert hass.states.get(STATUS_ENTITY_ID).attributes["candidate"] == 124.5
+
+
+@pytest.mark.parametrize(
+    ("reading", "state", "status"),
+    [
+        pytest.param(
+            meter_reading(133.5, Rejection.AMBIGUOUS, alternatives=(123.5,)),
+            "123.5",
+            "accepted",
+            id="one_fits",
+        ),
+        pytest.param(
+            meter_reading(113.5, alternatives=(123.5,)),
+            "123.5",
+            "accepted",
+            id="biased_wheel",
+        ),
+        pytest.param(
+            meter_reading(133.5, Rejection.AMBIGUOUS, alternatives=(113.5,)),
+            "123.456",
+            "ambiguous",
+            id="none_fits",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("camera")
+async def test_last_value_picks_among_readings(
+    hass: HomeAssistant,
+    freezer: FrozenDateTimeFactory,
+    meter_entry: MockConfigEntry,
+    mock_meter_reader: Mock,
+    reading: Any,
+    state: str,
+    status: str,
+) -> None:
+    """Near a carry the wheels allow two values; the one that fits is taken."""
+    await setup_integration(hass, meter_entry)
+
+    mock_meter_reader.return_value = reading
+    await _poll(hass, freezer)
+
+    assert _state(hass) == state
+    assert _state(hass, STATUS_ENTITY_ID) == status
 
 
 @pytest.mark.usefixtures("camera")
@@ -386,10 +428,29 @@ async def test_newer_confirmed_value_wins(
     _store(
         hass_storage,
         meter_entry,
-        {"meter": {"value": 50.0, "at": "2026-09-01T00:00:00+00:00"}},
+        {"meter": {"value": 130.0, "at": "2026-09-01T00:00:00+00:00"}},
     )
     await setup_integration(hass, meter_entry)
+    # From the stored 130.0 the reading would be lower and refused.
     assert _state(hass) == "123.456"
+
+
+@pytest.mark.usefixtures("camera")
+async def test_state_from_a_clock_ahead_is_repaired(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    meter_entry: MockConfigEntry,
+    mock_meter_reader: Mock,
+) -> None:
+    """A state saved two hours ahead does not hold back every reading."""
+    ahead = (dt_util.utcnow() + timedelta(hours=2)).isoformat()
+    _store(hass_storage, meter_entry, {"meter": {"value": 123.456, "at": ahead}})
+    await setup_integration(hass, meter_entry)
+
+    mock_meter_reader.return_value = meter_reading(123.5)
+    await _poll(hass, freezer)
+    assert _state(hass) == "123.5"
 
 
 @pytest.mark.usefixtures("camera", "mock_meter_reader")
@@ -473,7 +534,7 @@ async def test_counter_wrap_counts_on(
     mock_meter_reader.return_value = meter_reading(0.05)
     await setup_integration(hass, meter_entry)
 
-    assert float(_state(hass)) == pytest.approx(100000.05)
+    assert float(_state(hass)) == pytest.approx(100000.05, abs=1e-6)
     assert hass.states.get(STATUS_ENTITY_ID).attributes["candidate"] == 0.05
 
 

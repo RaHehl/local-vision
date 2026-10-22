@@ -283,7 +283,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         # Regions to suggest in the forms, from the finder or a former pass.
         self._suggested: dict[str, Any] = {}
         self._dial = 0
-        # What the meter read in the confirm step, suggested as its value.
+        # What the meter read in the confirm step, suggested as its value
+        # when the reading was accepted.
         self._candidate: float | None = None
 
     @staticmethod
@@ -591,11 +592,11 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             result = await self._async_status_label("unknown")
         else:
             self._options[CONF_CALIBRATION] = calibration
-            self._candidate = reading.candidate
+            if reading.value is not None:
+                # Only a reading the reader is sure of is offered as the value.
+                self._candidate = reading.value
             result = f"{reading.candidate} ({await self._async_status_label(reading.status)})"
-        keep_value = self.source == SOURCE_RECONFIGURE and _same_scale(
-            self._get_reconfigure_entry().options, self._options
-        )
+        keep_value = self.source == SOURCE_RECONFIGURE and self._keeps_value()
         return self.async_show_menu(
             step_id="meter_confirm",
             menu_options=["meter_finish" if keep_value else "meter_value", "digits"],
@@ -604,6 +605,15 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
                 "reading": result,
             },
         )
+
+    def _keeps_value(self) -> bool:
+        """Return True when a reconfigured meter can keep its value."""
+        entry: MeterConfigEntry = self._get_reconfigure_entry()
+        if entry.state is ConfigEntryState.LOADED:
+            has_value = entry.runtime_data.value is not None
+        else:
+            has_value = CONF_CONFIRMED in entry.options
+        return has_value and _same_scale(entry.options, self._options)
 
     async def async_step_meter_value(
         self, user_input: dict[str, Any] | None = None

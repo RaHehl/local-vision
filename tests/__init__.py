@@ -149,8 +149,13 @@ METER_INPUT = {
 
 
 def meter_reading(
-    value: float, rejection: Rejection | None = None, confidence: float = 0.9
+    value: float,
+    rejection: Rejection | None = None,
+    confidence: float = 0.9,
+    alternatives: tuple[float, ...] = (),
 ) -> MeterReading:
     """Return a reading as tarsius gives it, rejected or not."""
-    reading = MeterReading(value, value, None, confidence, 0.05, 0.001)
+    reading = MeterReading(
+        value, value, None, confidence, 0.05, 0.001, alternatives=alternatives
+    )
     return reading if rejection is None else reading.rejected(rejection)

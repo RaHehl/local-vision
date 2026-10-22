@@ -306,7 +306,7 @@ async def test_suggest_nothing(
         pytest.param(
             {"return_value": meter_reading(12.5, Rejection.LOW_CONFIDENCE)},
             "12.5 (Not sure)",
-            12.5,
+            None,
             True,
             id="unsure",
         ),
@@ -531,3 +531,43 @@ async def test_reconfigure_broken_settings(
 
     result = await _confirm(hass, flow_id)
     assert meter_entry.options[CONF_WHEELS] == 8
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+@pytest.mark.parametrize("loaded", [False, True])
+async def test_reconfigure_without_a_value_asks_for_it(
+    hass: HomeAssistant, meter_entry: MockConfigEntry, loaded: bool
+) -> None:
+    """A meter that never had a confirmed value gets one, scale or not."""
+    meter_entry.add_to_hass(hass)
+    options = {k: v for k, v in meter_entry.options.items() if k != CONF_CONFIRMED}
+    hass.config_entries.async_update_entry(meter_entry, options=options)
+    if loaded:
+        await hass.config_entries.async_setup(meter_entry.entry_id)
+        await hass.async_block_till_done()
+        assert meter_entry.runtime_data.value is None
+    result = await _reconfigure(hass, meter_entry)
+    flow_id = result["flow_id"]
+    await hass.config_entries.flow.async_configure(flow_id, {CONF_UNIT: "m³"})
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(flow_id, DIGITS_INPUT)
+    assert result["menu_options"] == ["meter_value", "digits"]
+
+    result = await _confirm(hass, flow_id, 123.4)
+    assert meter_entry.options[CONF_CONFIRMED][CONF_VALUE] == 123.4
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_reconfigure_loaded_meter_keeps_its_value(
+    hass: HomeAssistant, meter_entry: MockConfigEntry
+) -> None:
+    """A loaded meter with a value keeps it on the same scale."""
+    meter_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(meter_entry.entry_id)
+    await hass.async_block_till_done()
+    result = await _reconfigure(hass, meter_entry)
+    flow_id = result["flow_id"]
+    await hass.config_entries.flow.async_configure(flow_id, {CONF_UNIT: "m³"})
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(flow_id, DIGITS_INPUT)
+    assert result["menu_options"] == ["meter_finish", "digits"]
