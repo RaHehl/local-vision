@@ -768,3 +768,30 @@ async def test_exposure_of_another_calibration_is_not_used(
     )
     await setup_integration(hass, meter_entry)
     assert meter_entry.runtime_data.session.exposure is None
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        {"pending": [[1.0]]},
+        {"dispute": {"since": "x"}},
+        {"offset": "far"},
+        {"misreads": [10.0]},
+    ],
+)
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_damaged_detail_keeps_the_stored_value(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    meter_entry: MockConfigEntry,
+    caplog: pytest.LogCaptureFixture,
+    detail: dict[str, Any],
+) -> None:
+    """One damaged detail drops the details, not the newer stored value."""
+    at = (dt_util.utcnow() - timedelta(hours=1)).isoformat()
+    _store(hass_storage, meter_entry, {"meter": {"value": 130.0, "at": at, **detail}})
+    await setup_integration(hass, meter_entry)
+
+    # The stored 130.0 wins over the older confirmed 123.0: 123.456 is lower.
+    assert _state(hass) == "130.0"
+    assert "Keeping only the value of a damaged meter state" in caplog.text

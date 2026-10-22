@@ -58,8 +58,17 @@ def parse_state(data: Any) -> PlausibilityState | None:
     try:
         return PlausibilityState.from_dict(data)
     except ValueError:
+        pass
+    # One damaged detail must not cost the value: keep value and time.
+    try:
+        state = PlausibilityState.from_dict(
+            {"value": data.get("value"), "at": data.get("at")}
+        )
+    except AttributeError, ValueError:
         LOGGER.warning("Ignoring invalid stored meter state %r", data)
         return None
+    LOGGER.warning("Keeping only the value of a damaged meter state %r", data)
+    return state
 
 
 @dataclass(frozen=True, slots=True)

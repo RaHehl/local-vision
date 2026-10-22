@@ -11,7 +11,7 @@ A personal project, not an official Home Assistant integration.
 Two helper types:
 
 - **State of an area**: the simple one. A binary sensor for a part of the camera view: a garage door open or closed, a car parked or not, a gate, a mailbox flag. You teach it with frames from the camera.
-- **Meter reading (experimental)**: a sensor with the reading of a water, gas or electricity meter, ready for the Energy dashboard. It reads the counter wheels and, on analog meters, the pointer dials (×0.1 down to ×0.0001) together with them. Home Assistant finds the counter and the dials in the camera frame for you.
+- **Meter reading (experimental)**: a sensor with the reading of a water, gas or electricity meter, ready for the Energy dashboard. It reads the counter wheels and, on analog meters, the pointer dials (×0.1 down to ×0.0001) together with them. Home Assistant finds the counter and the dials in the camera frame for you; you confirm the number of wheels and check the regions.
 
 ## Installation
 
@@ -37,9 +37,9 @@ This helper type is experimental: check its value against your meter for the fir
 
 1. Pick the camera, what the meter counts (water, gas, energy) and a name. A gas meter that counts kWh is set up as energy.
 2. Choose the unit printed on the meter and, optionally, the maximum increase per hour. Left empty it is 4 m³ for water, 6 m³ for gas and 50 kWh for electricity, or the same in the chosen unit.
-3. Choose **Find the counter automatically**: Home Assistant looks for the counter window and the pointer dials in the current frame and fills in the forms, including the rotation. If it finds nothing, you enter the regions yourself.
-4. Check the window with the counter wheels: its edges in percent, the rotation that levels the digits, the number of wheels, how many of them count after the decimal point, and the number of pointer dials.
-5. Check the region of each dial, most significant first, and whether it turns counterclockwise.
+3. Choose **Find the counter automatically**: Home Assistant finds the counter window, its rotation and the pointer dials in the current frame and fills in the forms. If it finds nothing, you enter the regions yourself.
+4. Check the window with the counter wheels and enter what the finder can't know: the number of wheels and how many of them count after the decimal point. The edges are in percent, the rotation levels the digits.
+5. Check the region of each dial: the finder orders them clockwise from twelve o'clock, which is a guess; the most significant comes first. Set whether a dial turns counterclockwise.
 6. Check the regions and the value read from the current frame.
 7. Confirm the value the meter shows now, or correct it. Every later reading is checked against it.
 
@@ -49,8 +49,10 @@ The sensor has the state class `total` and the device class you chose, so it can
 
 - every wheel and dial is read clearly, without a capture fault such as a glare spot, a covered wheel or blur; how each wheel and dial looks is learnt at setup and follows slow changes of the light, so a darker night or fogged glass is no fault,
 - the wheels and dials agree with each other, and no wheel stands so close between two digits that either could be right,
-- the value is not lower than the last accepted one; a lower value is taken once three readings in a row agree on it, for example after a new meter, unless the drop is whole digits of an upper wheel, which looks like a misread; when that lasts six hours, a repair asks you to check the meter and enter its value,
-- the value rose no faster than the maximum increase per hour since the last accepted reading, also after a long gap.
+- the value is not lower than the last accepted one; a lower value is taken once three readings in a row agree on it, for example after a new meter, unless the drop is whole digits of an upper wheel, which looks like a misread,
+- the value rose no faster than the maximum increase per hour since the last accepted reading, also after a long gap; an unsure reading that rises by a whole digit waits for a second one that agrees.
+
+When readings stay a whole digit lower, or keep rising too fast, for six hours, a repair asks you to look at the meter and enter its value.
 
 Near a carry, or when the reader sees a wheel slightly off, the wheels allow two values, such as 619.9 and 609.9; the sensor takes the one that fits the last accepted value. A reading slightly below the last value, as a rolling last wheel or dial jitters, keeps the value, also after a long gap. A rejected reading leaves the value as it is. When the counter wraps from its highest values to zero, the sensor counts on; a jump from the middle of its range to near zero is a drop, not a wrap. The last accepted value, when it was read, and what the checks remember, such as lower readings waiting for agreement, are stored and survive restarts.
 
@@ -62,7 +64,7 @@ To change the unit, the maximum increase or the regions, for example after the c
 
 ### Finding the counter
 
-The automatic setup is part of the experimental meter type. A small model marks the counter window and the dials; it can miss the meter or mark something else, such as a printed serial number, and it does not count the wheels. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
+The automatic setup is part of the experimental meter type. A small model marks the counter window and the dials; it can miss the meter or mark something else, such as a printed serial number. It does not count the wheels or tell which dial is which: you enter the number of wheels, and the dial order is a guess, clockwise from twelve. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
 
 ## Updates
 

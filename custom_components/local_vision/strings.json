@@ -8,7 +8,7 @@
     },
     "create_entry": {
       "default": "The sensor stays unknown until you teach it both states. Go to **Settings** > **Devices & services** > **Helpers**, select the sensor, select the settings icon, then **Local vision options**. Teach one frame of each state, for example door open and door closed. If a state is not visible right now, teach it later.",
-      "meter": "**Experimental:** check the value against your meter for the first days. The sensor starts from the value you confirmed. It takes a reading only when the wheels and dials are read clearly, agree with each other, and fit the last accepted value: not lower, and not rising faster than the maximum increase per hour. A lower value is taken once three readings in a row agree on it. To set the value yourself, for example after a new meter, open the helper's options."
+      "meter": "**Experimental:** check the value against your meter for the first days. The sensor starts from the value you confirmed. It takes a reading only when the wheels and dials are read clearly, agree with each other, and fit the last accepted value: not lower, and not rising faster than the maximum increase per hour. A lower value is taken once three readings in a row agree on it. When readings stay a whole digit lower, or keep rising too fast, for six hours, a repair asks you to check the meter. To set the value yourself, for example after a new meter, open the helper's options."
     },
     "error": {
       "blank_frame": "The camera shows nothing, for example because it is offline or covered. Check the camera and try again.",
@@ -80,7 +80,7 @@
         "title": "Meter reading (experimental)"
       },
       "meter_confirm": {
-        "description": "![Current frame with the regions outlined]({preview})\n\nRead from this frame: {reading}\n\nThe sensor only takes readings it is sure of and that fit the last accepted value.",
+        "description": "![Current frame with the regions outlined]({preview})\n\nRead from this frame: {reading}\n\nCompare this with the meter. If it is off, check the number of wheels, the wheels after the decimal point and the order and direction of the dials. The sensor only takes readings it is sure of and that fit the last accepted value.",
         "menu_option_descriptions": {
           "digits": "Go back and adjust the regions.",
           "meter_finish": "Keep the current value and use these regions.",
@@ -94,9 +94,9 @@
         "title": "Check the regions"
       },
       "meter_regions": {
-        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. The easiest way is to let Home Assistant find them in the current frame; you check and adjust the regions afterwards.",
+        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. The easiest way: Home Assistant finds the counter and the dials in the current frame; you then confirm the number of wheels and check every region.",
         "menu_option_descriptions": {
-          "suggest": "Look for the counter window and the dials in the current frame and fill in the regions and the rotation. Check every region afterwards: it can miss the meter or mark something else, such as a serial number.",
+          "suggest": "Finds the counter window, its rotation and the dials in the current frame. You confirm the number of wheels and check every region afterwards: it can miss the meter or mark something else, such as a serial number, and the order and direction of the dials are a guess.",
           "digits": "Enter the edges of each region in percent of the frame."
         },
         "menu_options": {
@@ -172,7 +172,7 @@
       "user": {
         "description": "Everything runs locally, no image leaves Home Assistant.",
         "menu_option_descriptions": {
-          "meter": "Experimental: a sensor with the reading of a water, gas or electricity meter with counter wheels and pointer dials, for the Energy dashboard.",
+          "meter": "Experimental: a sensor with the reading of a water, gas or electricity meter with counter wheels and pointer dials, for the Energy dashboard. Home Assistant finds the counter and the dials; you confirm the number of wheels.",
           "state": "Simple and quick: a binary sensor for a part of the camera view, such as a garage door that is open or closed or a car that is parked. You teach it with example frames."
         },
         "menu_options": {

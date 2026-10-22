@@ -7,7 +7,7 @@ Thanks for helping. Every report, frame and fix counts.
 Open an issue with one of the forms:
 
 - **State helper result**: what you watch (a garage door, a car), how many frames you taught, and how often the sensor was right, unsure or wrong.
-- **Meter reading**: your meter type, the unit, and how the sensor's value compares with the meter over a few days. Attach the diagnostics or the reading status history if you can.
+- **Meter reading**: your meter type, the unit, whether the automatic setup found the counter and the dials, and how the sensor's value compares with the meter over a few days. Attach the diagnostics (helper page > three dots > Download diagnostics) or the reading status history if you can.
 - **Bug** and **feature request** for everything else.
 
 ## Meter samples
