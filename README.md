@@ -11,7 +11,7 @@ A personal project, not an official Home Assistant integration.
 Two helper types:
 
 - **State of an area**: the simple one. A binary sensor for a part of the camera view: a garage door open or closed, a car parked or not, a gate, a mailbox flag. You teach it with frames from the camera.
-- **Meter reading (experimental)**: a sensor with the reading of a water, gas or electricity meter, ready for the Energy dashboard. It reads the counter wheels and, on analog meters, the pointer dials (×0.1 down to ×0.0001) together with them. Home Assistant finds the counter and the dials in the camera frame for you; you confirm the number of wheels and check the regions.
+- **Meter reading (experimental)**: a sensor with the reading of a water, gas or electricity meter, ready for the Energy dashboard. It reads the counter wheels and, on analog meters, the pointer dials (×0.1 down to ×0.0001) together with them. Home Assistant suggests the counter and the dials in the camera frame; you check and adjust them and confirm the number of wheels.
 
 ## Installation
 
@@ -37,7 +37,7 @@ This helper type is experimental: check its value against your meter for the fir
 
 1. Pick the camera, what the meter counts (water, gas, energy) and a name. A gas meter that counts kWh is set up as energy.
 2. Choose the unit printed on the meter and, optionally, the maximum increase per hour. Left empty it is 4 m³ for water, 6 m³ for gas and 50 kWh for electricity, or the same in the chosen unit.
-3. Choose **Find the counter automatically**: Home Assistant finds the counter window, its rotation and the pointer dials in the current frame and fills in the forms. If it finds nothing, you enter the regions yourself.
+3. Choose **Suggest the counter and the dials**: Home Assistant suggests the counter window, its rotation and the pointer dials in the current frame and fills in the forms. Check and adjust them. If nothing is found, you enter the regions yourself.
 4. Check the window with the counter wheels and enter what the finder can't know: the number of wheels and how many of them count after the decimal point. The edges are in percent, the rotation levels the digits.
 5. Check the region of each dial: the finder orders them clockwise from twelve o'clock, which is a guess; the most significant comes first. Set whether a dial turns counterclockwise.
 6. Check the regions and the value read from the current frame.
@@ -62,9 +62,9 @@ Two diagnostic sensors show what happened: **reading status** (accepted, or why 
 
 To change the unit, the maximum increase or the regions, for example after the camera was moved, reconfigure the helper. The value is kept, unless the counter reads a different number afterwards, such as with another number of wheels; then the flow asks for it again.
 
-### Finding the counter
+### Suggested regions
 
-The automatic setup is part of the experimental meter type. A small model marks the counter window and the dials; it can miss the meter or mark something else, such as a printed serial number. It does not count the wheels or tell which dial is which: you enter the number of wheels, and the dial order is a guess, clockwise from twelve. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
+The suggestion is part of the experimental meter type. It works best on a straight-on view of one meter; on varied photos of single wheel counters it found the counter about half of the time, and missed it on vertically mounted counters or picked a serial number or type label instead. A small model marks the counter window and the dials; it can miss the meter or mark something else, such as a printed serial number. It does not count the wheels or tell which dial is which: you enter the number of wheels, and the dial order is a guess, clockwise from twelve. Check every region before you continue. On a Home Assistant Green it can take a few seconds. You can always enter the regions yourself instead.
 
 ## Updates
 
@@ -87,7 +87,7 @@ Local vision gets better with every camera and meter it meets. You can help with
 
 - **Tell us how it works for you**: open an issue with the result of a state helper or a meter reading, good or bad. There are short forms for both.
 - **Share frames of your meter**: crops of the counter and dials help train the meter models. Crop to the counter, blur or cover serial numbers and anything that identifies you, and share them under CC0 with the meter sample form.
-- **Try the experimental parts** on other meter types: gas meters, electricity meters, meters with red wheels or many dials.
+- **Try the experimental parts** on other meter types: gas meters, electricity meters, meters with red wheels or many dials, and tell us whether the suggested regions fit.
 - **Translations and code**: pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup and the tests.
 
 ## Development

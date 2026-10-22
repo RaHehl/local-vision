@@ -18,7 +18,7 @@
       "invalid_horizontal_range": "The left edge must be smaller than the right edge.",
       "invalid_max_rate": "The maximum increase must be above 0.",
       "invalid_vertical_range": "The top edge must be smaller than the bottom edge.",
-      "no_suggestion": "The counter wasn't found automatically. Enter the regions yourself; the frame below helps you place them.",
+      "no_suggestion": "No counter was found in this frame. Enter the regions yourself; the frame below helps you place them.",
       "too_many_decimal_wheels": "There can't be more wheels after the decimal point than wheels.",
       "unknown": "Unexpected error"
     },
@@ -94,13 +94,13 @@
         "title": "Check the regions"
       },
       "meter_regions": {
-        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. The easiest way: Home Assistant finds the counter and the dials in the current frame; you then confirm the number of wheels and check every region.",
+        "description": "![Current frame]({preview})\n\nNext, mark the window with the counter wheels and each pointer dial. The easiest way: Home Assistant suggests the counter and the dials in the current frame; you check and adjust them and confirm the number of wheels. It works best on a straight-on view of one meter.",
         "menu_option_descriptions": {
-          "suggest": "Finds the counter window, its rotation and the dials in the current frame. You confirm the number of wheels and check every region afterwards: it can miss the meter or mark something else, such as a serial number, and the order and direction of the dials are a guess.",
+          "suggest": "Suggests the counter window, its rotation and the dials in the current frame. Check and adjust every region and confirm the number of wheels: it can miss the meter or mark something else, such as a serial number or type label, and the order and direction of the dials are a guess.",
           "digits": "Enter the edges of each region in percent of the frame."
         },
         "menu_options": {
-          "suggest": "Find the counter automatically (recommended)",
+          "suggest": "Suggest the counter and the dials (recommended)",
           "digits": "Enter the regions yourself"
         },
         "title": "Meter regions"
@@ -172,7 +172,7 @@
       "user": {
         "description": "Everything runs locally, no image leaves Home Assistant.",
         "menu_option_descriptions": {
-          "meter": "Experimental: a sensor with the reading of a water, gas or electricity meter with counter wheels and pointer dials, for the Energy dashboard. Home Assistant finds the counter and the dials; you confirm the number of wheels.",
+          "meter": "Experimental: a sensor with the reading of a water, gas or electricity meter with counter wheels and pointer dials, for the Energy dashboard. Home Assistant suggests the counter and the dials; you check them and confirm the number of wheels.",
           "state": "Simple and quick: a binary sensor for a part of the camera view, such as a garage door that is open or closed or a car that is parked. You teach it with example frames."
         },
         "menu_options": {

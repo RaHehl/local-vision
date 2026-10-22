@@ -13,7 +13,7 @@ body:
   - type: dropdown
     id: setup
     attributes:
-      label: Automatic setup
+      label: Suggested regions
       options:
         - Found the counter and the dials
         - Found some regions, I corrected them
