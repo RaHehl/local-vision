@@ -22,6 +22,7 @@ from tarsius.meter.finder import Suggestion
 
 from custom_components.local_vision.const import (
     CONF_CALIBRATION,
+    CONF_CONFIRMED,
     CONF_DECIMAL_WHEELS,
     CONF_DIALS,
     CONF_DIGITS,
@@ -39,7 +40,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_ENTITY_ID, CONF_REGION, Platform
 from homeassistant.core import HomeAssistant
 
-from . import CAMERA, DIGITS, REGION, TEST_DOMAIN, FakeCamera, meter_reading
+from . import CAMERA, CONFIRMED, DIGITS, REGION, TEST_DOMAIN, FakeCamera, meter_reading
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +94,7 @@ def mock_config_entry(device_class: str) -> MockConfigEntry:
         domain=DOMAIN,
         title="Garage",
         entry_id="01JLOCALVISION0000000000000",
-        minor_version=2,
+        minor_version=3,
         options={
             CONF_TYPE: TYPE_STATE,
             CONF_ENTITY_ID: CAMERA,
@@ -129,19 +130,20 @@ def meter_entry() -> MockConfigEntry:
         domain=DOMAIN,
         title="Water meter",
         entry_id="01JLOCALVISIONMETER00000000",
-        minor_version=2,
+        minor_version=3,
         options={
             CONF_TYPE: TYPE_METER,
             CONF_ENTITY_ID: CAMERA,
             CONF_DEVICE_CLASS: "water",
             CONF_UNIT: "m³",
-            CONF_MAX_RATE: 10.0,
+            CONF_MAX_RATE: 4.0,
             CONF_DIGITS: DIGITS,
             CONF_ROTATION: 0,
             CONF_WHEELS: 8,
             CONF_DECIMAL_WHEELS: 3,
             CONF_DIALS: [],
             CONF_CALIBRATION: Calibration().as_dict(),
+            CONF_CONFIRMED: CONFIRMED,
         },
     )
 

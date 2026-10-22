@@ -11,9 +11,15 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from tarsius import FRAME_SIDE, BackendError, StateDetector
 
-from custom_components.local_vision.const import CONF_TYPE, DOMAIN, TYPE_STATE
+from custom_components.local_vision.const import (
+    CONF_TYPE,
+    CONF_UNIT,
+    DOMAIN,
+    TYPE_STATE,
+)
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
+    CONF_DEVICE_CLASS,
     CONF_ENTITY_ID,
     CONF_REGION,
     EVENT_HOMEASSISTANT_STARTED,
@@ -27,6 +33,7 @@ from homeassistant.helpers import entity_registry as er
 from . import (
     CAMERA,
     ENTITY_ID,
+    METER_ENTITY_ID,
     REGION,
     FakeCamera,
     frame_files,
@@ -353,7 +360,7 @@ async def test_migrate_entry_without_type(hass: HomeAssistant) -> None:
     await setup_integration(hass, entry)
 
     assert entry.state is ConfigEntryState.LOADED
-    assert entry.minor_version == 2
+    assert entry.minor_version == 3
     assert entry.options[CONF_TYPE] == TYPE_STATE
 
 
@@ -420,3 +427,39 @@ async def test_failed_save_keeps_frames(
     assert frame_files(config_dir, mock_config_entry) == files
     assert len(stored_frames(hass_storage, mock_config_entry)) == 1
     assert mock_config_entry.runtime_data.taught_frames.detector.counts() == {"on": 1}
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_migrate_gas_meter_in_kwh(
+    hass: HomeAssistant, meter_entry: MockConfigEntry
+) -> None:
+    """A gas sensor can't count kWh, so such a meter becomes an energy meter."""
+    meter_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        meter_entry,
+        minor_version=2,
+        options={**meter_entry.options, CONF_DEVICE_CLASS: "gas", CONF_UNIT: "kWh"},
+    )
+    await setup_integration(hass, meter_entry)
+
+    assert meter_entry.state is ConfigEntryState.LOADED
+    assert meter_entry.minor_version == 3
+    assert meter_entry.options[CONF_DEVICE_CLASS] == "energy"
+    assert hass.states.get(METER_ENTITY_ID).attributes["device_class"] == "energy"
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_migrate_keeps_gas_in_m3(
+    hass: HomeAssistant, meter_entry: MockConfigEntry
+) -> None:
+    """Gas meters in a volume stay gas meters."""
+    meter_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        meter_entry,
+        minor_version=2,
+        options={**meter_entry.options, CONF_DEVICE_CLASS: "gas"},
+    )
+    await setup_integration(hass, meter_entry)
+
+    assert meter_entry.minor_version == 3
+    assert meter_entry.options[CONF_DEVICE_CLASS] == "gas"

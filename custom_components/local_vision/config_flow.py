@@ -15,6 +15,7 @@ from tarsius import (
 
 from homeassistant.components.camera import DOMAIN as CAMERA_DOMAIN
 from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
     ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
@@ -34,6 +35,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_BOTTOM,
     CONF_CALIBRATION,
+    CONF_CONFIRMED,
     CONF_COUNTERCLOCKWISE,
     CONF_DECIMAL_WHEELS,
     CONF_DIAL_COUNT,
@@ -77,8 +79,8 @@ from .meter_reader import (
     layout_rois,
     read_once,
     rotate,
-    status,
     suggest,
+    value_scale,
 )
 from .preview import async_preview_url
 from .taught_frames import EntryClosed
@@ -183,6 +185,7 @@ def _unit_schema(device_class: str) -> probatio.Schema:
                     options=units, mode=selector.SelectSelectorMode.DROPDOWN
                 )
             ),
+            # Above 0, checked in the step: the selector's minimum is inclusive.
             probatio.Optional(CONF_MAX_RATE): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0, step="any", mode=selector.NumberSelectorMode.BOX
@@ -190,6 +193,31 @@ def _unit_schema(device_class: str) -> probatio.Schema:
             ),
         }
     )
+
+
+VALUE_SCHEMA = probatio.Schema(
+    {
+        probatio.Required(CONF_VALUE): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, step="any", mode=selector.NumberSelectorMode.BOX
+            )
+        )
+    }
+)
+
+
+def _same_scale(old: Mapping[str, Any], new: Mapping[str, Any]) -> bool:
+    """Return True when both options read the same number in the same unit."""
+    if old[CONF_UNIT] != new[CONF_UNIT]:
+        return False
+    try:
+        return value_scale(old) == value_scale(new)
+    except ValueError:
+        return False
+
+
+def _confirmed(value: float) -> dict[str, Any]:
+    return {CONF_VALUE: value, "at": dt_util.utcnow().isoformat()}
 
 
 def _region(user_input: Mapping[str, Any]) -> dict[str, float]:
@@ -246,7 +274,7 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up a camera region as a sensor."""
 
     VERSION = 1
-    MINOR_VERSION = 2
+    MINOR_VERSION = 3
 
     def __init__(self) -> None:
         """Initialize the flow."""
@@ -255,6 +283,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         # Regions to suggest in the forms, from the finder or a former pass.
         self._suggested: dict[str, Any] = {}
         self._dial = 0
+        # What the meter read in the confirm step, suggested as its value.
+        self._candidate: float | None = None
 
     @staticmethod
     @callback
@@ -370,20 +400,70 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the unit, the maximum rate and the regions of a meter.
+
+        The value and its checks are kept unless the counter reads a
+        different number afterwards, then the value is asked again.
+        """
+        entry = self._get_reconfigure_entry()
+        if entry.options[CONF_TYPE] != TYPE_METER:
+            return self.async_abort(reason="reconfigure_state")
+        try:
+            frame = await async_fetch_frame(self.hass, entry.options[CONF_ENTITY_ID])
+        except FrameUnavailable:
+            return self.async_abort(reason="cannot_connect")
+        try:
+            await self.hass.async_add_executor_job(load_image, frame)
+        except ImageError:
+            return self.async_abort(reason="invalid_frame")
+        self._frame = frame
+        self._options = dict(entry.options)
+        self._suggested = {
+            key: entry.options[key]
+            for key in (
+                CONF_DIGITS,
+                CONF_ROTATION,
+                CONF_WHEELS,
+                CONF_DECIMAL_WHEELS,
+                CONF_DIALS,
+            )
+        }
+        return await self.async_step_meter_unit()
+
     async def async_step_meter_unit(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Choose the unit the meter counts in."""
+        device_class = self._options[CONF_DEVICE_CLASS]
+        errors: dict[str, str] = {}
         if user_input is not None:
             unit = user_input[CONF_UNIT]
-            self._options[CONF_UNIT] = unit
-            self._options[CONF_MAX_RATE] = user_input.get(
-                CONF_MAX_RATE, DEFAULT_MAX_RATES[unit]
-            )
-            return await self.async_step_meter_regions()
+            max_rate = user_input.get(CONF_MAX_RATE)
+            if max_rate is not None and not max_rate > 0:
+                errors[CONF_MAX_RATE] = "invalid_max_rate"
+            else:
+                self._options[CONF_UNIT] = unit
+                self._options[CONF_MAX_RATE] = (
+                    DEFAULT_MAX_RATES[device_class][unit]
+                    if max_rate is None
+                    else max_rate
+                )
+                return await self.async_step_meter_regions()
+        suggested = user_input
+        if suggested is None and self.source == SOURCE_RECONFIGURE:
+            suggested = {
+                CONF_UNIT: self._options[CONF_UNIT],
+                CONF_MAX_RATE: self._options[CONF_MAX_RATE],
+            }
         return self.async_show_form(
             step_id="meter_unit",
-            data_schema=_unit_schema(self._options[CONF_DEVICE_CLASS]),
+            data_schema=self.add_suggested_values_to_schema(
+                _unit_schema(device_class), suggested
+            ),
+            errors=errors,
         )
 
     async def async_step_meter_regions(
@@ -496,6 +576,7 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Show the regions and what the meter reads now."""
         self._options.pop(CONF_CALIBRATION, None)
+        self._candidate = None
         try:
             calibration = await self.hass.async_add_executor_job(
                 calibrate, self._frame, self._options
@@ -510,22 +591,47 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             result = await self._async_status_label("unknown")
         else:
             self._options[CONF_CALIBRATION] = calibration
-            result = f"{reading.candidate} ({await self._async_status_label(status(reading))})"
+            self._candidate = reading.candidate
+            result = f"{reading.candidate} ({await self._async_status_label(reading.status)})"
+        keep_value = self.source == SOURCE_RECONFIGURE and _same_scale(
+            self._get_reconfigure_entry().options, self._options
+        )
         return self.async_show_menu(
             step_id="meter_confirm",
-            menu_options=["meter_finish", "digits"],
+            menu_options=["meter_finish" if keep_value else "meter_value", "digits"],
             description_placeholders={
                 "preview": await self._async_meter_preview(self._options),
                 "reading": result,
             },
         )
 
+    async def async_step_meter_value(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm the value on the meter; readings are checked against it."""
+        if user_input is not None:
+            self._options[CONF_CONFIRMED] = _confirmed(user_input[CONF_VALUE])
+            return await self.async_step_meter_finish()
+        return self.async_show_form(
+            step_id="meter_value",
+            data_schema=self.add_suggested_values_to_schema(
+                VALUE_SCHEMA,
+                {} if self._candidate is None else {CONF_VALUE: self._candidate},
+            ),
+        )
+
     async def async_step_meter_finish(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Create the meter entry."""
+        """Create the meter entry, or update it when reconfiguring."""
+        if self.source == SOURCE_RECONFIGURE:
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(), options=self._options
+            )
         name = self._options.pop(CONF_NAME)
-        return self.async_create_entry(title=name, data={}, options=self._options)
+        return self.async_create_entry(
+            title=name, data={}, options=self._options, description="meter"
+        )
 
     async def _async_meter_preview(self, options: Mapping[str, Any]) -> str:
         frame = self._frame
@@ -696,15 +802,7 @@ class MeterOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="correct",
             data_schema=self.add_suggested_values_to_schema(
-                probatio.Schema(
-                    {
-                        probatio.Required(CONF_VALUE): selector.NumberSelector(
-                            selector.NumberSelectorConfig(
-                                min=0, step="any", mode=selector.NumberSelectorMode.BOX
-                            )
-                        )
-                    }
-                ),
-                {CONF_VALUE: coordinator.value},
+                VALUE_SCHEMA,
+                {} if coordinator.value is None else {CONF_VALUE: coordinator.value},
             ),
         )

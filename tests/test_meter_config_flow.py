@@ -1,9 +1,11 @@
 """Tests for the Local vision meter config flow."""
 
+from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from tarsius import BackendError, BlankFrameError, Roi
 from tarsius.meter import Calibration, Rejection
 from tarsius.meter.finder import Suggestion
@@ -11,6 +13,7 @@ from tarsius.meter.finder import Suggestion
 from custom_components.local_vision.const import (
     CONF_BOTTOM,
     CONF_CALIBRATION,
+    CONF_CONFIRMED,
     CONF_COUNTERCLOCKWISE,
     CONF_DECIMAL_WHEELS,
     CONF_DIAL_COUNT,
@@ -23,6 +26,7 @@ from custom_components.local_vision.const import (
     CONF_TOP,
     CONF_TYPE,
     CONF_UNIT,
+    CONF_VALUE,
     CONF_WHEELS,
     DOMAIN,
     TYPE_METER,
@@ -31,6 +35,7 @@ from homeassistant.config_entries import SOURCE_USER
 from homeassistant.const import CONF_DEVICE_CLASS, CONF_ENTITY_ID
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult, FlowResultType
+from homeassistant.util import dt as dt_util
 
 from . import CAMERA, DIAL, DIGITS, METER_INPUT, FakeCamera, meter_reading
 
@@ -74,6 +79,15 @@ async def _choose(hass: HomeAssistant, flow_id: str, step: str) -> FlowResult:
     )
 
 
+async def _confirm(
+    hass: HomeAssistant, flow_id: str, value: float = 123.4
+) -> FlowResult:
+    """Use the regions and confirm the value on the meter."""
+    result = await _choose(hass, flow_id, "meter_value")
+    assert result["step_id"] == "meter_value"
+    return await hass.config_entries.flow.async_configure(flow_id, {CONF_VALUE: value})
+
+
 def _suggested(result: FlowResult, key: str) -> Any:
     for field in result["data_schema"].schema:
         if field == key:
@@ -93,27 +107,37 @@ async def test_meter_flow(
     result = await hass.config_entries.flow.async_configure(flow_id, DIGITS_INPUT)
     assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "meter_confirm"
+    assert result["menu_options"] == ["meter_value", "digits"]
     assert result["description_placeholders"]["reading"] == "123.456 (Accepted)"
     assert result["description_placeholders"]["preview"].startswith(
         "/api/local_vision/preview/"
     )
 
-    result = await _choose(hass, flow_id, "meter_finish")
+    result = await _choose(hass, flow_id, "meter_value")
+    assert result["type"] is FlowResultType.FORM
+    assert _suggested(result, CONF_VALUE) == 123.456
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_VALUE: 123.4}
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Water meter"
+    assert result["description"] == "meter"
     assert result["options"] == {
         CONF_TYPE: TYPE_METER,
         CONF_ENTITY_ID: CAMERA,
         CONF_DEVICE_CLASS: "water",
         CONF_UNIT: "m³",
-        CONF_MAX_RATE: 10,
+        CONF_MAX_RATE: 4,
         CONF_DIGITS: DIGITS,
         CONF_ROTATION: 0,
         CONF_WHEELS: 8,
         CONF_DECIMAL_WHEELS: 3,
         CONF_DIALS: [],
         CONF_CALIBRATION: Calibration().as_dict(),
+        CONF_CONFIRMED: {CONF_VALUE: 123.4, "at": ANY},
     }
+    confirmed_at = datetime.fromisoformat(result["options"][CONF_CONFIRMED]["at"])
+    assert abs(confirmed_at - dt_util.utcnow()) < timedelta(minutes=1)
     assert len(mock_setup_entry.mock_calls) == 1
 
 
@@ -143,7 +167,7 @@ async def test_meter_flow_dials(hass: HomeAssistant, mock_meter_reader: Mock) ->
     )
     assert _suggested(result, CONF_COUNTERCLOCKWISE) is True
     await hass.config_entries.flow.async_configure(flow_id, first)
-    result = await _choose(hass, flow_id, "meter_finish")
+    result = await _confirm(hass, flow_id)
 
     assert result["options"][CONF_UNIT] == "L"
     assert result["options"][CONF_MAX_RATE] == 3000
@@ -248,7 +272,7 @@ async def test_suggest_regions(
     assert _suggested(result, CONF_LEFT) == 60
     assert _suggested(result, CONF_COUNTERCLOCKWISE) is False
     await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
-    result = await _choose(hass, flow_id, "meter_finish")
+    result = await _confirm(hass, flow_id)
     assert result["options"][CONF_ROTATION] == 4.0
     assert result["options"][CONF_DIALS] == [DIAL_INPUT]
 
@@ -277,23 +301,26 @@ async def test_suggest_nothing(
 
 @pytest.mark.usefixtures("camera", "mock_setup_entry")
 @pytest.mark.parametrize(
-    ("outcome", "reading", "calibrated"),
+    ("outcome", "reading", "suggested", "calibrated"),
     [
         pytest.param(
             {"return_value": meter_reading(12.5, Rejection.LOW_CONFIDENCE)},
             "12.5 (Not sure)",
+            12.5,
             True,
             id="unsure",
         ),
         pytest.param(
             {"side_effect": BlankFrameError("dark")},
             "The camera shows nothing",
+            None,
             False,
             id="blank",
         ),
         pytest.param(
             {"side_effect": BackendError("broken")},
             "Unexpected error",
+            None,
             False,
             id="model",
         ),
@@ -304,6 +331,7 @@ async def test_confirm_without_reading(
     mock_meter_reader: Mock,
     outcome: dict[str, Any],
     reading: str,
+    suggested: float | None,
     calibrated: bool,
 ) -> None:
     """The regions can be kept even when the meter can't be read right now."""
@@ -313,7 +341,11 @@ async def test_confirm_without_reading(
     result = await hass.config_entries.flow.async_configure(flow_id, DIGITS_INPUT)
     assert result["description_placeholders"]["reading"] == reading
 
-    result = await _choose(hass, flow_id, "meter_finish")
+    result = await _choose(hass, flow_id, "meter_value")
+    field = next(iter(result["data_schema"].schema))
+    assert (field.description or {}).get("suggested_value") == suggested
+    result = await hass.config_entries.flow.async_configure(flow_id, {CONF_VALUE: 12.0})
+    assert result["options"][CONF_CONFIRMED][CONF_VALUE] == 12.0
     assert (CONF_CALIBRATION in result["options"]) is calibrated
 
 
@@ -329,5 +361,173 @@ async def test_rotated_meter(hass: HomeAssistant) -> None:
         "/api/local_vision/preview/"
     )
 
-    result = await _choose(hass, flow_id, "meter_finish")
+    result = await _confirm(hass, flow_id)
     assert result["options"][CONF_ROTATION] == -3.5
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_max_rate_must_be_positive(hass: HomeAssistant) -> None:
+    """A maximum increase of 0 would reject every reading."""
+    flow_id = await _start(hass)
+    await hass.config_entries.flow.async_configure(flow_id, METER_INPUT)
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_UNIT: "m³", CONF_MAX_RATE: 0}
+    )
+    assert result["step_id"] == "meter_unit"
+    assert result["errors"] == {CONF_MAX_RATE: "invalid_max_rate"}
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_UNIT: "m³", CONF_MAX_RATE: 2.5}
+    )
+    assert result["step_id"] == "meter_regions"
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+@pytest.mark.parametrize(
+    ("device_class", "units", "max_rate"),
+    [
+        ("water", ["m³", "L", "gal", "ft³", "CCF", "MCF"], 4),
+        ("gas", ["m³", "ft³", "CCF", "MCF", "L"], 6),
+        ("energy", ["kWh", "Wh", "MWh"], 50),
+    ],
+)
+async def test_units_and_default_rate(
+    hass: HomeAssistant, device_class: str, units: list[str], max_rate: float
+) -> None:
+    """Each kind offers the units its device class allows; gas has no kWh."""
+    flow_id = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**METER_INPUT, CONF_DEVICE_CLASS: device_class}
+    )
+    unit = next(iter(result["data_schema"].schema))
+    selector = result["data_schema"].schema[unit]
+    assert selector.config["options"] == units
+
+    await hass.config_entries.flow.async_configure(flow_id, {CONF_UNIT: units[0]})
+    await _choose(hass, flow_id, "digits")
+    await hass.config_entries.flow.async_configure(flow_id, DIGITS_INPUT)
+    result = await _confirm(hass, flow_id)
+    assert result["options"][CONF_MAX_RATE] == max_rate
+
+
+async def _reconfigure(hass: HomeAssistant, entry: MockConfigEntry) -> FlowResult:
+    entry.add_to_hass(hass)
+    result = await entry.start_reconfigure_flow(hass)
+    assert result["step_id"] == "meter_unit"
+    assert _suggested(result, CONF_UNIT) == "m³"
+    assert _suggested(result, CONF_MAX_RATE) == 4.0
+    return result
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_reconfigure_keeps_the_value(
+    hass: HomeAssistant, meter_entry: MockConfigEntry
+) -> None:
+    """New regions on the same counter keep the value and its checks."""
+    result = await _reconfigure(hass, meter_entry)
+    flow_id = result["flow_id"]
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {CONF_UNIT: "m³", CONF_MAX_RATE: 3}
+    )
+    result = await _choose(hass, flow_id, "digits")
+    assert _suggested(result, CONF_LEFT) == DIGITS[CONF_LEFT]
+    assert _suggested(result, CONF_WHEELS) == 8
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_ROTATION: 2.5, CONF_LEFT: 31}
+    )
+    assert result["menu_options"] == ["meter_finish", "digits"]
+    confirmed = meter_entry.options[CONF_CONFIRMED]
+
+    result = await _choose(hass, flow_id, "meter_finish")
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert meter_entry.options[CONF_MAX_RATE] == 3
+    assert meter_entry.options[CONF_ROTATION] == 2.5
+    assert meter_entry.options[CONF_DIGITS][CONF_LEFT] == 31
+    assert meter_entry.options[CONF_CONFIRMED] == confirmed
+    assert meter_entry.options[CONF_CALIBRATION] == Calibration().as_dict()
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+@pytest.mark.parametrize(
+    ("unit", "digits"),
+    [
+        pytest.param("m³", {**DIGITS_INPUT, CONF_DECIMAL_WHEELS: 2}, id="decimals"),
+        pytest.param("m³", {**DIGITS_INPUT, CONF_WHEELS: 7}, id="wheels"),
+        pytest.param("m³", {**DIGITS_INPUT, CONF_DIAL_COUNT: 1}, id="dial"),
+        pytest.param("L", DIGITS_INPUT, id="unit"),
+    ],
+)
+async def test_reconfigure_with_another_scale_asks_the_value(
+    hass: HomeAssistant,
+    meter_entry: MockConfigEntry,
+    unit: str,
+    digits: dict[str, Any],
+) -> None:
+    """When the counter reads another number, the value is confirmed again."""
+    result = await _reconfigure(hass, meter_entry)
+    flow_id = result["flow_id"]
+    await hass.config_entries.flow.async_configure(flow_id, {CONF_UNIT: unit})
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(flow_id, digits)
+    if result["step_id"] == "dial":
+        result = await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+    assert result["menu_options"] == ["meter_value", "digits"]
+
+    result = await _confirm(hass, flow_id, 1234.5)
+    assert result["reason"] == "reconfigure_successful"
+    assert meter_entry.options[CONF_CONFIRMED][CONF_VALUE] == 1234.5
+    assert meter_entry.options[CONF_UNIT] == unit
+
+
+@pytest.mark.usefixtures("camera")
+async def test_reconfigure_state_helper(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry
+) -> None:
+    """The region of a state helper stays with its taught frames."""
+    mock_config_entry.add_to_hass(hass)
+    result = await mock_config_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_state"
+
+
+@pytest.mark.parametrize(
+    ("frame", "reason"),
+    [
+        pytest.param(None, "cannot_connect", id="no_frame"),
+        pytest.param(b"<html>502</html>", "invalid_frame", id="undecodable"),
+    ],
+)
+async def test_reconfigure_without_frame(
+    hass: HomeAssistant,
+    camera: FakeCamera,
+    meter_entry: MockConfigEntry,
+    frame: bytes | None,
+    reason: str,
+) -> None:
+    """Regions are set on a frame; without one there is nothing to show."""
+    camera.frame = frame
+    meter_entry.add_to_hass(hass)
+    result = await meter_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == reason
+
+
+@pytest.mark.usefixtures("camera", "mock_meter_reader")
+async def test_reconfigure_broken_settings(
+    hass: HomeAssistant, meter_entry: MockConfigEntry
+) -> None:
+    """Settings that failed the setup are fixed and the value confirmed again."""
+    meter_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        meter_entry, options={**meter_entry.options, CONF_WHEELS: 13}
+    )
+    result = await _reconfigure(hass, meter_entry)
+    flow_id = result["flow_id"]
+    await hass.config_entries.flow.async_configure(flow_id, {CONF_UNIT: "m³"})
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(flow_id, DIGITS_INPUT)
+    assert result["menu_options"] == ["meter_value", "digits"]
+
+    result = await _confirm(hass, flow_id)
+    assert meter_entry.options[CONF_WHEELS] == 8

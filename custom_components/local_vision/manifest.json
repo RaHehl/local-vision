@@ -7,7 +7,7 @@
   "dependencies": ["camera", "http"],
   "documentation": "https://github.com/RaHehl/local-vision",
   "integration_type": "helper",
-  "iot_class": "local_polling",
+  "iot_class": "calculated",
   "issue_tracker": "https://github.com/RaHehl/local-vision/issues",
   "requirements": ["tarsius==0.5.0"],
   "version": "0.1.0"

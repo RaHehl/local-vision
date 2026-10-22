@@ -21,7 +21,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_UNIT
 from .coordinator import MeterConfigEntry, MeterCoordinator
-from .meter_reader import STATUSES, status
+from .meter_reader import STATUSES
 
 PARALLEL_UPDATES = 0
 
@@ -57,9 +57,14 @@ class MeterEntity(CoordinatorEntity[MeterCoordinator]):
 
 
 class MeterValueSensor(MeterEntity, SensorEntity):
-    """The last accepted reading, it never decreases on its own."""
+    """The last accepted reading.
 
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    A total rather than total_increasing: a corrected or re-agreed lower
+    value then counts as a negative change and nets out the wrong rise,
+    instead of starting a new meter cycle.
+    """
+
+    _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(
         self, coordinator: MeterCoordinator, device: AnyDeviceEntry | None
@@ -108,7 +113,7 @@ class MeterStatusSensor(MeterDiagnosticSensor):
         """Return the status, None without a reading."""
         if (reading := self.coordinator.data) is None:
             return None
-        return status(reading)
+        return reading.status
 
     @property
     @override

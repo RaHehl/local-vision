@@ -139,6 +139,8 @@ STATUS_ENTITY_ID = "sensor.garage_camera_water_meter_reading_status"
 CONFIDENCE_ENTITY_ID = "sensor.garage_camera_water_meter_reading_confidence"
 DIGITS = {CONF_LEFT: 30, CONF_TOP: 40, CONF_RIGHT: 70, CONF_BOTTOM: 50}
 DIAL = {CONF_LEFT: 60, CONF_TOP: 60, CONF_RIGHT: 70, CONF_BOTTOM: 80}
+# The value the user confirmed when the meter was set up.
+CONFIRMED = {"value": 123.0, "at": "2026-10-01T00:00:00+00:00"}
 METER_INPUT = {
     CONF_ENTITY_ID: CAMERA,
     CONF_DEVICE_CLASS: "water",

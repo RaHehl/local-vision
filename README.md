@@ -31,27 +31,32 @@ The sensor is unknown until both states are taught and while it is unsure. It is
 
 ## Meter reading
 
-1. Pick the camera, what the meter counts (water, gas, energy) and a name.
-2. Choose the unit printed on the meter and, optionally, the maximum increase per hour.
+1. Pick the camera, what the meter counts (water, gas, energy) and a name. A gas meter that counts kWh is set up as energy.
+2. Choose the unit printed on the meter and, optionally, the maximum increase per hour. Left empty it is 4 m³ for water, 6 m³ for gas and 50 kWh for electricity, or the same in the chosen unit.
 3. Enter the regions or let Home Assistant suggest them (see below).
 4. Set the window with the counter wheels: its edges in percent, the rotation that levels the digits, the number of wheels, how many of them count after the decimal point, and the number of pointer dials.
 5. Set the region of each dial, most significant first, and whether it turns counterclockwise.
-6. Check the regions and the value read from the current frame, then create the sensor.
+6. Check the regions and the value read from the current frame.
+7. Confirm the value the meter shows now, or correct it. Every later reading is checked against it.
 
-The sensor has the state class `total_increasing` and the device class you chose, so it can be added to the Energy dashboard. It only takes readings that pass these checks:
+The sensor has the state class `total` and the device class you chose, so it can be added to the Energy dashboard. It only takes readings that pass these checks:
 
-- every wheel and dial is read clearly, without a capture fault such as glare or blur,
-- the wheels and dials agree with each other,
-- the value is not lower than the last accepted one,
-- the value rose no faster than the maximum increase per hour.
+- every wheel and dial is read clearly, without a capture fault such as glare, darkness, a covered wheel or blur,
+- the wheels and dials agree with each other, and no wheel stands so close between two digits that either could be right,
+- the value is not lower than the last accepted one; a lower value is taken once three readings in a row agree on it, for example after a new meter,
+- the value rose no faster than the maximum increase per hour since the last accepted reading, also after a long gap.
 
-A rejected reading leaves the value as it is. The sensor never goes down on its own. The last accepted value and the state of these checks are stored and survive restarts.
+A rejected reading leaves the value as it is. A reading one unit below the last value, as a rolling last wheel jitters, keeps the value. When the counter wraps from its highest value to zero, the sensor counts on. The last accepted value and when it was read are stored and survive restarts.
 
-Two diagnostic sensors show what happened: **reading status** (accepted, or why the reading was rejected, with the value read as attribute) and **reading confidence** (disabled by default). If a wrong value was accepted, or the meter was replaced, set the right value in the helper's options.
+Because the state class is `total`, a value that goes down counts as a negative change in the statistics: a wrong reading that was too high is taken back by the correction instead of starting a new meter cycle. Near a carry of an upper wheel, for example from 619.9 to 620.0, readings are often rejected as ambiguous; the value then catches up once the wheel has turned.
+
+Two diagnostic sensors show what happened: **reading status** (accepted, or why the reading was rejected, with the value read as attribute) and **reading confidence** (disabled by default). If a wrong value was accepted, or the meter was replaced, set the right value in the helper's options. If a meter has no confirmed value, for example after its stored data was lost, it takes no readings and a repair asks for the value.
+
+To change the unit, the maximum increase or the regions, for example after the camera was moved, reconfigure the helper. The value is kept, unless the counter reads a different number afterwards, such as with another number of wheels; then the flow asks for it again.
 
 ### Suggest regions (alpha)
 
-The flow offers **Suggest regions (alpha)**: a small model looks for the counter window and the dials in the current frame and fills in the forms, including the rotation. It is an early version. It can miss the meter or mark something else, such as a printed serial number, and it does not count the wheels. Check every region before you continue. It is never required, you can always enter the regions yourself.
+The flow offers **Suggest regions (alpha)**: a small model looks for the counter window and the dials in the current frame and fills in the forms, including the rotation. It is an early version. It can miss the meter or mark something else, such as a printed serial number, and it does not count the wheels. Check every region before you continue. On a Home Assistant Green it can take a few seconds. It is never required, you can always enter the regions yourself.
 
 ## Updates
 
@@ -63,11 +68,10 @@ Both helper types read a frame every 5 minutes. To read more or less often, disa
 - The region of a state sensor can't be changed later; add the helper again.
 - A state sensor knows two states. A wide region with clutter that moves around makes it less reliable.
 - Meter reading works on mechanical counter wheels and pointer dials, not on LCD displays. The camera should look straight at the meter with sharp digits.
-- The meter regions can't be changed later; add the helper again.
 
 ## Privacy
 
-Everything runs locally. Frames are fetched from the camera entity, compared on the Home Assistant machine and discarded. Taught frames of state sensors are stored in `config/local_vision/<entry id>/` and deleted with the helper. Meter helpers store only the last value.
+Everything runs locally. Frames are fetched from the camera entity, compared on the Home Assistant machine and discarded. Taught frames of state sensors are stored as JPEG files in `config/local_vision/<entry id>/`, so they are part of Home Assistant backups, and are deleted with the helper. Meter helpers store only the last accepted value and when it was read.
 
 ## Development
 

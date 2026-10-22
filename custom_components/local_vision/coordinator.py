@@ -4,18 +4,18 @@ import asyncio
 from typing import Any, override
 
 from tarsius import BackendError, BlankFrameError, ImageError, Result, Status
-from tarsius.meter import MeterReading
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ENTITY_ID
 from homeassistant.core import CoreState, HomeAssistant
-from homeassistant.helpers.storage import Store
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, LOGGER, UPDATE_INTERVAL
 from .frame_source import FrameUnavailable, async_fetch_frame
-from .meter_reader import MeterSession
+from .meter_reader import MeterSession, Readout
+from .meter_store import SAVE_DELAY, MeterStore
 from .taught_frames import TaughtFrames
 
 type StateConfigEntry = ConfigEntry[StateCoordinator]
@@ -86,12 +86,13 @@ async def async_fetch_camera_frame(hass: HomeAssistant, entry: ConfigEntry) -> b
         ) from err
 
 
-class MeterCoordinator(DataUpdateCoordinator[MeterReading | None]):
+class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
     """Read the meter and keep the last accepted value.
 
     The data is the last reading, None before the first one and when the
-    frame shows nothing. The value only rises, except when the user
-    corrects it.
+    frame shows nothing. The value is the session's last accepted one; it
+    only drops when the user corrects it or several readings agree on a
+    lower value.
     """
 
     config_entry: MeterConfigEntry
@@ -101,7 +102,7 @@ class MeterCoordinator(DataUpdateCoordinator[MeterReading | None]):
         hass: HomeAssistant,
         config_entry: LocalVisionConfigEntry,
         session: MeterSession,
-        store: Store[dict[str, Any]],
+        store: MeterStore,
         stored: dict[str, Any],
     ) -> None:
         """Initialize the coordinator with the stored data of the entry."""
@@ -118,13 +119,16 @@ class MeterCoordinator(DataUpdateCoordinator[MeterReading | None]):
         self._store = store
         # Raw stored data, so fields written by newer versions survive a save.
         self._stored = stored
-        value = stored["meter"].get("value")
-        self.value: float | None = (
-            float(value) if isinstance(value, int | float) else None
-        )
+
+    @property
+    def value(self) -> float | None:
+        """Return the last accepted value, None before one was confirmed."""
+        if (state := self.session.state) is None:
+            return None
+        return state.value
 
     @override
-    async def _async_update_data(self) -> MeterReading | None:
+    async def _async_update_data(self) -> Readout | None:
         if self.hass.state is not CoreState.running:
             # The camera may not be set up yet; refreshed once started.
             return self.data
@@ -132,7 +136,7 @@ class MeterCoordinator(DataUpdateCoordinator[MeterReading | None]):
         async with self._lock:
             return await self._async_read(frame)
 
-    async def _async_read(self, frame: bytes) -> MeterReading | None:
+    async def _async_read(self, frame: bytes) -> Readout | None:
         try:
             reading = await self.hass.async_add_executor_job(
                 self.session.read, frame, dt_util.utcnow()
@@ -153,27 +157,39 @@ class MeterCoordinator(DataUpdateCoordinator[MeterReading | None]):
                 translation_placeholders={"error": str(err)},
             ) from err
         if reading.value is not None:
-            # A slightly lower reading within the tolerance keeps the value.
-            if self.value is None or reading.value > self.value:
-                self.value = reading.value
-            await self._async_save()
+            self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
         return reading
 
     async def async_correct(self, value: float) -> None:
         """Set the value the user read on the meter, also a lower one."""
         async with self._lock:
             self.session.correct(value, dt_util.utcnow())
-            self.value = value
-            await self._async_save()
+            await self._store.async_save(self._data_to_save())
+        async_delete_unconfirmed_issue(self.hass, self.config_entry)
         self.async_update_listeners()
 
-    async def _async_save(self) -> None:
-        self._stored = {
-            **self._stored,
-            "meter": {
-                **self._stored["meter"],
-                "value": self.value,
-                "plausibility": self.session.state,
-            },
-        }
-        await self._store.async_save(self._stored)
+    def _data_to_save(self) -> dict[str, Any]:
+        meter = self._stored.get("meter")
+        meter = dict(meter) if isinstance(meter, dict) else {}
+        if (state := self.session.state) is not None:
+            meter |= state.as_dict()
+        self._stored = {**self._stored, "meter": meter}
+        return self._stored
+
+
+def async_create_unconfirmed_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Ask the user for the value on the meter; nothing is accepted without it."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"unconfirmed_{entry.entry_id}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="meter_unconfirmed",
+        translation_placeholders={"name": entry.title},
+    )
+
+
+def async_delete_unconfirmed_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the request for the meter value."""
+    ir.async_delete_issue(hass, DOMAIN, f"unconfirmed_{entry.entry_id}")

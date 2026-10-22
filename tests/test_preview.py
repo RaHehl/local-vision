@@ -76,3 +76,15 @@ async def test_preview_count_is_bounded(
 
     assert (await client.get(first)).status == HTTPStatus.NOT_FOUND
     assert (await client.get(last)).status == HTTPStatus.OK
+
+
+@pytest.mark.usefixtures("camera")
+async def test_preview_needs_the_signature(
+    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator
+) -> None:
+    """Without the signed query a preview is refused."""
+    url = await _preview_url(hass)
+    client = await hass_client_no_auth()
+
+    unsigned = url.split("?", 1)[0]
+    assert (await client.get(unsigned)).status == HTTPStatus.UNAUTHORIZED

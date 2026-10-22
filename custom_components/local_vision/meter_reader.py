@@ -1,9 +1,12 @@
 """Meter readings of an entry; the only module that uses tarsius.meter."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
+import math
 from typing import Any
+import warnings
 
 from PIL import Image
 from tarsius import Roi, load_image
@@ -32,7 +35,7 @@ from .const import (
 )
 from .detection import region_to_roi
 
-__all__ = ["MeterReading", "MeterSession"]
+__all__ = ["MeterSession", "MeterState", "Readout"]
 
 # Previews keep the detail of the frame the wheels are read from.
 PREVIEW_SIDE = METER_FRAME_SIDE
@@ -41,8 +44,56 @@ ACCEPTED = "accepted"
 STATUSES = [ACCEPTED, *(rejection.value for rejection in Rejection)]
 
 
+@dataclass(frozen=True, slots=True)
+class MeterState:
+    """The last accepted value of a meter, as the integration stores it."""
+
+    value: float
+    # Timezone-aware.
+    at: datetime
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the stored form."""
+        return {"value": self.value, "at": self.at.isoformat()}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> MeterState | None:
+        """Return the state of a stored form, None when it is not usable."""
+        if not isinstance(data, Mapping):
+            return None
+        value, at = data.get("value"), data.get("at")
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            or not isinstance(at, str)
+        ):
+            return None
+        try:
+            parsed = datetime.fromisoformat(at)
+        except ValueError:
+            return None
+        if parsed.utcoffset() is None:
+            return None
+        return cls(float(value), parsed)
+
+
+@dataclass(frozen=True, slots=True)
+class Readout:
+    """One reading of the meter, as the entities show it."""
+
+    # The accepted value, None when the reading was rejected.
+    value: float | None
+    # What the wheels and dials show, also when rejected.
+    candidate: float
+    # ACCEPTED or the rejection, one of STATUSES.
+    status: str
+    # Of the least sure wheel or dial, 0 to 1.
+    confidence: float
+
+
 def layout_from_options(options: Mapping[str, Any]) -> MeterLayout:
-    """Return the layout of stored options; raises RoiError or ValueError."""
+    """Return the layout of stored options; raises ValueError if invalid."""
     return MeterLayout(
         digits=region_to_roi(options[CONF_DIGITS]),
         wheels=int(options[CONF_WHEELS]),
@@ -56,6 +107,15 @@ def layout_from_options(options: Mapping[str, Any]) -> MeterLayout:
         ),
         rotation=float(options[CONF_ROTATION]),
     )
+
+
+def value_scale(options: Mapping[str, Any]) -> tuple[int, int]:
+    """Return the whole and fractional places the counter shows.
+
+    Two layouts with the same scale read the same number from a meter.
+    """
+    layout = layout_from_options(options)
+    return layout.wheels - layout.decimal_wheels, layout.decimals
 
 
 def layout_rois(options: Mapping[str, Any]) -> list[Roi]:
@@ -79,11 +139,15 @@ def calibrate(frame: bytes, options: Mapping[str, Any]) -> dict[str, Any]:
     return MeterReader().calibrate(frame, layout_from_options(options)).as_dict()
 
 
-def read_once(frame: bytes, options: Mapping[str, Any]) -> MeterReading:
+def read_once(frame: bytes, options: Mapping[str, Any]) -> Readout:
     """Read a frame without plausibility, e.g. to show it in a flow; blocking."""
-    return MeterReader().read(
+    reading = MeterReader().read(
         frame, layout_from_options(options), _calibration(options)
     )
+    return _readout(reading)
+
+
+_alpha_silenced = False
 
 
 def suggest(frame: bytes) -> dict[str, Any] | None:
@@ -92,9 +156,15 @@ def suggest(frame: bytes) -> dict[str, Any] | None:
     The regions are in percent like the flow forms. Raises tarsius
     ImageError, BlankFrameError or BackendError.
     """
+    global _alpha_silenced  # noqa: PLW0603
     # Alpha and heavy, only loaded when a user asks for a suggestion.
     from tarsius.meter import finder
 
+    if not _alpha_silenced:
+        # The flow says it is alpha; the warning would only fill the log.
+        warnings.filterwarnings("ignore", category=finder.AlphaWarning)
+        LOGGER.debug("Suggesting meter regions with the alpha finder")
+        _alpha_silenced = True
     suggestion = finder.suggest(frame)
     if suggestion.digits is None:
         return None
@@ -134,56 +204,59 @@ def _calibration(options: Mapping[str, Any]) -> Calibration | None:
     return Calibration.from_dict(data)
 
 
+def _readout(reading: MeterReading) -> Readout:
+    return Readout(
+        reading.value,
+        reading.candidate,
+        ACCEPTED if reading.rejection is None else reading.rejection.value,
+        reading.confidence,
+    )
+
+
 class MeterSession:
-    """Reads one meter and remembers the last plausible value.
+    """Reads one meter and checks each reading against the last accepted one.
 
     Calls block and must not overlap; the coordinator serializes them.
     """
 
-    def __init__(
-        self, options: Mapping[str, Any], state: Mapping[str, Any] | None
-    ) -> None:
-        """Initialize from the entry options and the stored state."""
+    def __init__(self, options: Mapping[str, Any], state: MeterState | None) -> None:
+        """Initialize from the entry options and the last accepted value.
+
+        Raises ValueError for options tarsius refuses, e.g. a maximum rate
+        of 0 or a calibration that is out of range.
+        """
         self.layout = layout_from_options(options)
         self._calibration = _calibration(options)
         self._reader = MeterReader()
-        restored = None
-        if state is not None:
-            try:
-                restored = PlausibilityState.from_dict(state)
-            except ValueError:
-                LOGGER.warning("Ignoring invalid stored meter state %r", state)
         self._plausibility = Plausibility(
-            max_rate=options[CONF_MAX_RATE],
+            max_rate=float(options[CONF_MAX_RATE]),
             # A rolling last wheel or dial jitters by about one unit.
             tolerance=10.0**-self.layout.decimals,
-            state=restored,
+            # The counter wraps to zero; the value counts on.
+            period=self.layout.period,
+            state=None if state is None else PlausibilityState(state.value, state.at),
         )
 
     @property
-    def state(self) -> dict[str, Any] | None:
-        """Return the state to store, so checks continue after a restart."""
+    def state(self) -> MeterState | None:
+        """Return the last accepted value, None before one was confirmed."""
         if (state := self._plausibility.state) is None:
             return None
-        return state.as_dict()
+        return MeterState(state.value, state.at)
 
     def load(self) -> None:
         """Load the readers; blocking, raises tarsius BackendError."""
         self._reader.load()
 
-    def read(self, frame: bytes, at: datetime) -> MeterReading:
+    def read(self, frame: bytes, at: datetime) -> Readout:
         """Read a frame and check it against the last accepted value; blocking.
 
         Raises tarsius ImageError, BlankFrameError or BackendError.
         """
         reading = self._reader.read(frame, self.layout, self._calibration)
-        return self._plausibility.review(reading, at)
+        reading = self._plausibility.review(reading, at)
+        return _readout(reading)
 
     def correct(self, value: float, at: datetime) -> None:
-        """Take a value the user entered as the last accepted one."""
+        """Take a value the user read on the meter as the last accepted one."""
         self._plausibility.accept(value, at)
-
-
-def status(reading: MeterReading) -> str:
-    """Return the status of a reading."""
-    return ACCEPTED if reading.rejection is None else reading.rejection.value

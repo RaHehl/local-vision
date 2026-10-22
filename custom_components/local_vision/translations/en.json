@@ -1,7 +1,14 @@
 {
   "config": {
+    "abort": {
+      "cannot_connect": "Failed to connect",
+      "invalid_frame": "The camera returned an image that Home Assistant can't read. Check the camera's settings and try again.",
+      "reconfigure_state": "The region of a state sensor can't be changed, because the taught frames belong to it. Add the helper again with the new region.",
+      "reconfigure_successful": "Reconfiguration was successful"
+    },
     "create_entry": {
-      "default": "The sensor stays unknown until you teach it both states. Go to **Settings** > **Devices & services** > **Helpers**, select the sensor, select the settings icon, then **Local vision options**. Teach one frame of each state, for example door open and door closed. If a state is not visible right now, teach it later."
+      "default": "The sensor stays unknown until you teach it both states. Go to **Settings** > **Devices & services** > **Helpers**, select the sensor, select the settings icon, then **Local vision options**. Teach one frame of each state, for example door open and door closed. If a state is not visible right now, teach it later.",
+      "meter": "The sensor starts from the value you confirmed. It takes a reading only when the wheels and dials are read clearly, agree with each other, and fit the last accepted value: not lower, and not rising faster than the maximum increase per hour. A lower value is taken once three readings in a row agree on it. To set the value yourself, for example after a new meter, open the helper's options."
     },
     "error": {
       "blank_frame": "The camera shows nothing, for example because it is offline or covered. Check the camera and try again.",
@@ -9,6 +16,7 @@
       "cannot_connect": "Failed to connect",
       "invalid_frame": "The camera returned an image that Home Assistant can't read. Check the camera's settings and try again.",
       "invalid_horizontal_range": "The left edge must be smaller than the right edge.",
+      "invalid_max_rate": "The maximum increase must be above 0.",
       "invalid_vertical_range": "The top edge must be smaller than the bottom edge.",
       "no_suggestion": "No meter was found in the frame. Enter the regions yourself.",
       "too_many_decimal_wheels": "There can't be more wheels after the decimal point than wheels.",
@@ -64,7 +72,7 @@
           "name": "Name"
         },
         "data_description": {
-          "device_class": "What the meter counts. This sets the units and where the sensor fits in the Energy dashboard.",
+          "device_class": "What the meter counts. This sets the units and where the sensor fits in the Energy dashboard. A gas meter that counts kWh is an energy meter here.",
           "entity_id": "The camera that shows the meter.",
           "name": "For example, Water meter. The sensor is added to the camera's device, so the device name is shown in front."
         },
@@ -72,14 +80,16 @@
         "title": "Meter reading"
       },
       "meter_confirm": {
-        "description": "![Current frame with the regions outlined]({preview})\n\nRead from this frame: {reading}\n\nThe sensor only takes readings it is sure of, and never a value lower than the last one.",
+        "description": "![Current frame with the regions outlined]({preview})\n\nRead from this frame: {reading}\n\nThe sensor only takes readings it is sure of and that fit the last accepted value.",
         "menu_option_descriptions": {
           "digits": "Go back and adjust the regions.",
-          "meter_finish": "Create the sensor with these regions."
+          "meter_finish": "Keep the current value and use these regions.",
+          "meter_value": "Confirm the value on the meter next."
         },
         "menu_options": {
           "digits": "Change the regions",
-          "meter_finish": "Use these regions"
+          "meter_finish": "Use these regions",
+          "meter_value": "Use these regions"
         },
         "title": "Check the regions"
       },
@@ -101,11 +111,21 @@
           "unit": "Unit"
         },
         "data_description": {
-          "max_rate": "A reading that rises faster than this is rejected as a misread. Leave it empty for a value well above a household's use, such as 10 m³ for water or gas and 100 kWh for electricity. A higher value lets more misreads through.",
+          "max_rate": "A reading that rises faster than this is rejected as a misread. Leave it empty for a value above a household's use: 4 m³ for water, 6 m³ for gas, 50 kWh for electricity, or the same in the chosen unit. A higher value lets more misreads through.",
           "unit": "The unit the counter wheels count in."
         },
         "description": "Choose the unit printed on the meter.",
         "title": "Unit"
+      },
+      "meter_value": {
+        "data": {
+          "value": "Value"
+        },
+        "data_description": {
+          "value": "The value the meter shows now, in the unit of the sensor. It is filled in with what was read; check it against the meter."
+        },
+        "description": "Every reading is checked against this value, so make sure it is right. The sensor starts from it.",
+        "title": "Value on the meter"
       },
       "region": {
         "data": {
@@ -172,11 +192,13 @@
         "name": "{meter} reading status",
         "state": {
           "accepted": "Accepted",
+          "ambiguous": "Wheel between two digits",
           "decreased": "Lower than before",
           "fault": "Camera problem",
           "inconsistent": "Wheels disagree",
           "low_confidence": "Not sure",
-          "too_fast": "Rose too fast"
+          "too_fast": "Rose too fast",
+          "unconfirmed": "Value not confirmed"
         },
         "state_attributes": {
           "candidate": {
@@ -193,8 +215,17 @@
     "invalid_frame": {
       "message": "The camera returned an image that could not be decoded: {error}"
     },
+    "invalid_settings": {
+      "message": "The meter settings are invalid: {error}. Reconfigure the helper."
+    },
     "model_unavailable": {
       "message": "The recognition model failed: {error}"
+    }
+  },
+  "issues": {
+    "meter_unconfirmed": {
+      "title": "Confirm the value of {name}",
+      "description": "{name} has no confirmed value, so it can't check its readings and takes none. Go to **Settings** > **Devices & services** > **Helpers**, select {name}, select the settings icon, then enter the value shown on the meter."
     }
   },
   "options": {
@@ -220,7 +251,7 @@
         "data_description": {
           "value": "The reading on the meter, in the unit of the sensor."
         },
-        "description": "Enter the value shown on the meter, for example after a wrong reading or a new meter. The value can also be lower than the current one, statistics then count from it as from a new meter.",
+        "description": "Enter the value shown on the meter, for example after a wrong reading or a new meter. The next readings are checked against it. A lower value counts as a negative change in the statistics, so a reading that was too high is taken back.",
         "title": "Correct the value"
       },
       "init": {
@@ -275,12 +306,14 @@
     "reading_status": {
       "options": {
         "accepted": "Accepted",
+        "ambiguous": "Wheel between two digits",
         "blank": "The camera shows nothing",
         "decreased": "Lower than before",
         "fault": "Camera problem",
         "inconsistent": "Wheels disagree",
         "low_confidence": "Not sure",
         "too_fast": "Rose too fast",
+        "unconfirmed": "Value not confirmed",
         "unknown": "Unexpected error"
       }
     },
