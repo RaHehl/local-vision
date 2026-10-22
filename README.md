@@ -41,16 +41,16 @@ The sensor is unknown until both states are taught and while it is unsure. It is
 
 The sensor has the state class `total` and the device class you chose, so it can be added to the Energy dashboard. It only takes readings that pass these checks:
 
-- every wheel and dial is read clearly, without a capture fault such as glare, darkness, a covered wheel or blur,
+- every wheel and dial is read clearly, without a capture fault such as a glare spot, a covered wheel or blur; how each wheel and dial looks is learnt at setup and follows slow changes of the light, so a darker night or fogged glass is no fault,
 - the wheels and dials agree with each other, and no wheel stands so close between two digits that either could be right,
-- the value is not lower than the last accepted one; a lower value is taken once three readings in a row agree on it, for example after a new meter, unless the drop is whole digits of an upper wheel, which looks like a misread; then set the value in the options,
+- the value is not lower than the last accepted one; a lower value is taken once three readings in a row agree on it, for example after a new meter, unless the drop is whole digits of an upper wheel, which looks like a misread; when that lasts six hours, a repair asks you to check the meter and enter its value,
 - the value rose no faster than the maximum increase per hour since the last accepted reading, also after a long gap.
 
-Near a carry, or when the reader sees a wheel slightly off, the wheels allow two values, such as 619.9 and 609.9; the sensor takes the one that fits the last accepted value. A rejected reading leaves the value as it is. A reading one unit below the last value, as a rolling last wheel jitters, keeps the value. When the counter wraps from its highest values to zero, the sensor counts on; a jump from the middle of its range to near zero is a drop, not a wrap. The last accepted value and when it was read are stored and survive restarts.
+Near a carry, or when the reader sees a wheel slightly off, the wheels allow two values, such as 619.9 and 609.9; the sensor takes the one that fits the last accepted value. A reading slightly below the last value, as a rolling last wheel or dial jitters, keeps the value, also after a long gap. A rejected reading leaves the value as it is. When the counter wraps from its highest values to zero, the sensor counts on; a jump from the middle of its range to near zero is a drop, not a wrap. The last accepted value, when it was read, and what the checks remember, such as lower readings waiting for agreement, are stored and survive restarts.
 
 Because the state class is `total`, a value that goes down counts as a negative change in the statistics: a wrong reading that was too high is taken back by the correction instead of starting a new meter cycle.
 
-Two diagnostic sensors show what happened: **reading status** (accepted, or why the reading was rejected, with the value read as attribute) and **reading confidence** (disabled by default). If a wrong value was accepted, or the meter was replaced, set the right value in the helper's options. If a meter has no confirmed value, for example after its stored data was lost, it takes no readings and a repair asks for the value.
+Two diagnostic sensors show what happened: **reading status** (accepted, or why the reading was rejected, with the value read as attribute) and **reading confidence** (disabled by default). If a wrong value was accepted, or the meter was replaced, set the right value in the helper's options. If a meter has no confirmed value, for example after its stored data was lost, it takes no readings and a repair asks for the value; enter it right in the repair.
 
 To change the unit, the maximum increase or the regions, for example after the camera was moved, reconfigure the helper. The value is kept, unless the counter reads a different number afterwards, such as with another number of wheels; then the flow asks for it again.
 
@@ -71,7 +71,7 @@ Both helper types read a frame every 5 minutes. To read more or less often, disa
 
 ## Privacy
 
-Everything runs locally. Frames are fetched from the camera entity, compared on the Home Assistant machine and discarded. Taught frames of state sensors are stored as JPEG files in `config/local_vision/<entry id>/`, so they are part of Home Assistant backups, and are deleted with the helper. Meter helpers store only the last accepted value and when it was read.
+Everything runs locally. Frames are fetched from the camera entity, compared on the Home Assistant machine and discarded. Taught frames of state sensors are stored as JPEG files in `config/local_vision/<entry id>/`, so they are part of Home Assistant backups, and are deleted with the helper. Meter helpers store the last accepted value, when it was read, what the checks remember and grey-level statistics of each wheel and dial, no images.
 
 ## Development
 

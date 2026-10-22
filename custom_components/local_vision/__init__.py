@@ -101,7 +101,7 @@ async def _async_create_coordinator(
             MeterState.from_dict(entry.options.get(CONF_CONFIRMED)),
         )
         try:
-            session = MeterSession(entry.options, state)
+            session = MeterSession(entry.options, state, stored.get("exposure"))
         except ValueError as err:
             raise ConfigEntryError(
                 translation_domain=DOMAIN,

@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 from syrupy.assertion import SnapshotAssertion
 from tarsius import BackendError, BlankFrameError, ImageError
-from tarsius.meter import MeterReader, Rejection
+from tarsius.meter import Calibration, MeterReader, Rejection
 
 from custom_components.local_vision.const import (
     CONF_CALIBRATION,
@@ -23,6 +23,7 @@ from custom_components.local_vision.const import (
     DOMAIN,
     UPDATE_INTERVAL,
 )
+from custom_components.local_vision.meter_reader import MeterDispute, MeterState
 from custom_components.local_vision.meter_store import SAVE_DELAY, STORAGE_VERSION
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -355,10 +356,10 @@ async def test_store_from_version_1_is_migrated(
 
     stored = hass_storage[_key(meter_entry)]
     assert stored["version"] == STORAGE_VERSION
-    assert stored["data"] == {
-        "history": [1],
-        "meter": {"trend": 2, "value": 129.9995, "at": at},
-    }
+    assert stored["data"]["history"] == [1]
+    meter = stored["data"]["meter"]
+    assert (meter["trend"], meter["value"], meter["at"]) == (2, 129.9995, at)
+    assert "plausibility" not in meter
     # The reader sees 123.456, lower than the migrated value.
     assert _state(hass) == "129.9995"
     assert _state(hass, STATUS_ENTITY_ID) == "decreased"
@@ -565,7 +566,7 @@ async def test_without_calibration(
     await setup_integration(hass, meter_entry)
 
     assert _state(hass) == "123.456"
-    assert mock_meter_reader.call_args.args[2] is None
+    assert mock_meter_reader.call_args.args[2] == Calibration()
 
 
 @pytest.mark.usefixtures("camera")
@@ -714,3 +715,50 @@ async def test_correct_not_loaded(
 
     result = await hass.config_entries.options.async_init(meter_entry.entry_id)
     assert result["reason"] == "not_loaded"
+
+
+def test_meter_state_round_trip() -> None:
+    """Everything the checks remember survives the store."""
+    at = dt_util.utcnow()
+    state = MeterState(
+        627.5,
+        at,
+        alternative=True,
+        pending=((620.0, at),),
+        misreads=(10.0,),
+        dispute=MeterDispute(at, at, 3, 617.5),
+    )
+    assert MeterState.from_dict(state.as_dict()) == state
+
+
+@pytest.mark.parametrize(
+    ("extra", "kept"),
+    [
+        ({"pending": [[1.0], ["x", "y"], [1.0, "soon"]]}, {"pending": ()}),
+        ({"misreads": [-1.0, "10", 10.0]}, {"misreads": (10.0,)}),
+        ({"dispute": {"since": "x"}}, {"dispute": None}),
+        (
+            {
+                "dispute": {
+                    "since": "2026-10-20T00:00:00+00:00",
+                    "last": "2026-10-20T00:00:00+00:00",
+                    "count": 0,
+                    "value": 1.0,
+                }
+            },
+            {"dispute": None},
+        ),
+        ({"dispute": [1]}, {"dispute": None}),
+        ({"alternative": "yes"}, {"alternative": False}),
+    ],
+)
+def test_meter_state_drops_unusable_details(
+    extra: dict[str, Any], kept: dict[str, Any]
+) -> None:
+    """Value and time are kept when a detail is unusable."""
+    data = {"value": 1.0, "at": "2026-10-20T00:00:00+00:00"} | extra
+    state = MeterState.from_dict(data)
+    assert state is not None
+    assert state.value == 1.0
+    for name, value in kept.items():
+        assert getattr(state, name) == value

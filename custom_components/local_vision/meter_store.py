@@ -10,7 +10,9 @@ from .meter_reader import MeterState
 
 # 1 kept a separate highest value next to tarsius' own plausibility state.
 # 2 keeps one state, {"meter": {"value": float, "at": iso time}}.
-STORAGE_VERSION = 2
+# 3 adds what the checks remember to "meter" (see MeterState) and the
+#   exposure learnt from readings as "exposure"; 2 reads as 3 unchanged.
+STORAGE_VERSION = 3
 # Readings come every few minutes; a restart flushes pending saves.
 SAVE_DELAY = 10
 

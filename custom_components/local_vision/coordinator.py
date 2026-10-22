@@ -156,9 +156,33 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
                 translation_key="model_unavailable",
                 translation_placeholders={"error": str(err)},
             ) from err
-        if reading.value is not None:
-            self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
+        # Rejected readings change what the checks remember too.
+        self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
+        self._update_dispute_issue()
         return reading
+
+    def _update_dispute_issue(self) -> None:
+        """Ask the user to settle lasting lower readings, or drop the request."""
+        issue_id = f"disputed_{self.config_entry.entry_id}"
+        if (dispute := self.session.dispute) is None:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        decimals = self.session.layout.decimals
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            data={"entry_id": self.config_entry.entry_id, "value": dispute.value},
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="meter_disputed",
+            translation_placeholders={
+                "name": self.config_entry.title,
+                "value": f"{dispute.value:.{decimals}f}",
+                "last": f"{self.value:.{decimals}f}" if self.value is not None else "",
+                "since": dt_util.as_local(dispute.since).strftime("%Y-%m-%d %H:%M"),
+            },
+        )
 
     async def async_correct(self, value: float) -> None:
         """Set the value the user read on the meter, also a lower one."""
@@ -166,6 +190,7 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
             self.session.correct(value, dt_util.utcnow())
             await self._store.async_save(self._data_to_save())
         async_delete_unconfirmed_issue(self.hass, self.config_entry)
+        self._update_dispute_issue()
         self.async_update_listeners()
 
     def _data_to_save(self) -> dict[str, Any]:
@@ -174,6 +199,8 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
         if (state := self.session.state) is not None:
             meter |= state.as_dict()
         self._stored = {**self._stored, "meter": meter}
+        if (exposure := self.session.exposure) is not None:
+            self._stored["exposure"] = exposure
         return self._stored
 
 
@@ -183,7 +210,8 @@ def async_create_unconfirmed_issue(hass: HomeAssistant, entry: ConfigEntry) -> N
         hass,
         DOMAIN,
         f"unconfirmed_{entry.entry_id}",
-        is_fixable=False,
+        data={"entry_id": entry.entry_id},
+        is_fixable=True,
         severity=ir.IssueSeverity.WARNING,
         translation_key="meter_unconfirmed",
         translation_placeholders={"name": entry.title},
@@ -191,5 +219,6 @@ def async_create_unconfirmed_issue(hass: HomeAssistant, entry: ConfigEntry) -> N
 
 
 def async_delete_unconfirmed_issue(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Remove the request for the meter value."""
+    """Remove the requests for the meter value."""
     ir.async_delete_issue(hass, DOMAIN, f"unconfirmed_{entry.entry_id}")
+    ir.async_delete_issue(hass, DOMAIN, f"disputed_{entry.entry_id}")

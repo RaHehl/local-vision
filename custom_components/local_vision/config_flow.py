@@ -592,9 +592,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             result = await self._async_status_label("unknown")
         else:
             self._options[CONF_CALIBRATION] = calibration
-            if reading.value is not None:
-                # Only a reading the reader is sure of is offered as the value.
-                self._candidate = reading.value
+            # Only a reading the reader accepted is offered as the value.
+            self._candidate = reading.value
             result = f"{reading.candidate} ({await self._async_status_label(reading.status)})"
         keep_value = self.source == SOURCE_RECONFIGURE and self._keeps_value()
         return self.async_show_menu(
