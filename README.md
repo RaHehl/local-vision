@@ -23,6 +23,8 @@ Then go to **Settings** > **Devices & services** > **Helpers** > **Create helper
 
 ## State of an area
 
+https://github.com/user-attachments/assets/cc40e55a-6d74-43ce-8fa2-ac992730097c
+
 1. Pick the camera, the kind of sensor (garage door, door, occupancy, opening, window) and a name.
 2. Set the region around the garage door, the parking spot or the gate. The next step shows it on the current frame.
 3. In the helper's options, teach the current frame with the state it shows. Teach each state at least once; frames in different light (day, night, lights on) make it more reliable.
@@ -30,6 +32,8 @@ Then go to **Settings** > **Devices & services** > **Helpers** > **Create helper
 The sensor stays unknown until both states are taught, and while it is unsure.
 
 ## Meter reading (experimental)
+
+https://github.com/user-attachments/assets/c8139dda-6c49-41ca-b806-787866d57968
 
 Check the value against your meter for the first days, and tell us how it does.
 
