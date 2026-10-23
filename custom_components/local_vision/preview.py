@@ -44,10 +44,14 @@ async def async_preview_url(
     rois: Roi | Sequence[Roi],
     *,
     max_side: int = FRAME_SIDE,
+    highlight: Roi | None = None,
 ) -> str:
-    """Render the frame with the regions outlined; return a signed URL to it."""
+    """Render the frame with the regions outlined; return a signed URL to it.
+
+    The highlight region, e.g. the one being edited, gets its own colour.
+    """
     image = await hass.async_add_executor_job(
-        partial(outline, frame, rois, max_side=max_side)
+        partial(outline, frame, rois, max_side=max_side, highlight=highlight)
     )
     if (previews := hass.data.get(DATA_PREVIEWS)) is None:
         # The first config flow runs before the integration is set up.

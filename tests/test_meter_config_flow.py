@@ -2,11 +2,11 @@
 
 from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import ANY, AsyncMock, Mock
+from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from tarsius import BackendError, BlankFrameError, Roi
+from tarsius import BackendError, BlankFrameError, Roi, outline
 from tarsius.meter import Calibration, Rejection
 from tarsius.meter.finder import Suggestion
 
@@ -277,6 +277,42 @@ async def test_suggest_regions(
     result = await _confirm(hass, flow_id)
     assert result["options"][CONF_ROTATION] == 4.0
     assert result["options"][CONF_DIALS] == [DIAL_INPUT]
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_previews_highlight_the_edited_region(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """The preview marks the region in the form apart from the set ones."""
+    counter = Roi(0.3, 0.4, 0.7, 0.5)
+    first, second = Roi(0.6, 0.6, 0.7, 0.8), Roi(0.2, 0.6, 0.3, 0.8)
+    mock_finder.return_value = Suggestion(
+        digits=counter,
+        digits_score=0.8,
+        dials=(first, second),
+        dial_scores=(0.7, 0.7),
+    )
+    flow_id = await _to_regions(hass)
+    with patch("custom_components.local_vision.preview.outline", wraps=outline) as spy:
+        await _choose(hass, flow_id, "suggest")
+        assert spy.call_args.args[1] == []
+        assert spy.call_args.kwargs["highlight"] == counter
+
+        await hass.config_entries.flow.async_configure(
+            flow_id, {**DIGITS_INPUT, CONF_DIAL_COUNT: 2}
+        )
+        assert spy.call_args.args[1] == [counter]
+        assert spy.call_args.kwargs["highlight"] == first
+
+        await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+        assert spy.call_args.args[1] == [counter, first]
+        assert spy.call_args.kwargs["highlight"] == second
+
+        # A region that cannot be drawn is not highlighted.
+        await hass.config_entries.flow.async_configure(
+            flow_id, {**DIAL_INPUT, CONF_TOP: 90}
+        )
+        assert spy.call_args.kwargs["highlight"] is None
 
 
 @pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")

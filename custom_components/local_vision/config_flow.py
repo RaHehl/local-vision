@@ -220,11 +220,11 @@ def _confirmed(value: float) -> dict[str, Any]:
     return {CONF_VALUE: value, "at": dt_util.utcnow().isoformat()}
 
 
+_SIDES = (CONF_LEFT, CONF_TOP, CONF_RIGHT, CONF_BOTTOM)
+
+
 def _region(user_input: Mapping[str, Any]) -> dict[str, float]:
-    return {
-        side: user_input[side]
-        for side in (CONF_LEFT, CONF_TOP, CONF_RIGHT, CONF_BOTTOM)
-    }
+    return {side: user_input[side] for side in _SIDES}
 
 
 def _region_error(region: Mapping[str, float]) -> str | None:
@@ -233,6 +233,14 @@ def _region_error(region: Mapping[str, float]) -> str | None:
     except RoiError as err:
         return ROI_ERRORS[err.axis]
     return None
+
+
+def _valid_region(values: Mapping[str, Any]) -> dict[str, float] | None:
+    """Return the region in a form's values, or None when it is unset or empty."""
+    if not all(side in values for side in _SIDES):
+        return None
+    region = _region(values)
+    return None if _region_error(region) else region
 
 
 def _teach_schema(device_class: str) -> probatio.Schema:
@@ -532,17 +540,14 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_DECIMAL_WHEELS: self._suggested.get(CONF_DECIMAL_WHEELS, 0),
             CONF_DIAL_COUNT: len(self._suggested.get(CONF_DIALS, [])),
         }
-        region = _region(suggested)
-        preview: dict[str, Any] = {CONF_ROTATION: suggested[CONF_ROTATION]}
-        if _region_error(region) is None:
-            preview[CONF_DIGITS] = region
+        preview = await self._async_meter_preview(
+            {CONF_ROTATION: suggested[CONF_ROTATION]}, _valid_region(suggested)
+        )
         return self.async_show_form(
             step_id="digits",
             data_schema=self.add_suggested_values_to_schema(DIGITS_SCHEMA, suggested),
             errors=errors,
-            description_placeholders={
-                "preview": await self._async_meter_preview(preview)
-            },
+            description_placeholders={"preview": preview},
         )
 
     async def async_step_dial(
@@ -569,7 +574,9 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "number": str(self._dial + 1),
                 "count": str(len(self._suggested[CONF_DIALS])),
-                "preview": await self._async_meter_preview(self._options),
+                "preview": await self._async_meter_preview(
+                    self._options, _valid_region(suggested)
+                ),
             },
         )
 
@@ -643,12 +650,21 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             title=name, data={}, options=self._options, description="meter"
         )
 
-    async def _async_meter_preview(self, options: Mapping[str, Any]) -> str:
+    async def _async_meter_preview(
+        self,
+        options: Mapping[str, Any],
+        highlight: Mapping[str, float] | None = None,
+    ) -> str:
+        """Outline the set regions and highlight the one being edited."""
         frame = self._frame
         if rotation := options.get(CONF_ROTATION):
             frame = await self.hass.async_add_executor_job(rotate, frame, rotation)
         return await async_preview_url(
-            self.hass, frame, layout_rois(options), max_side=PREVIEW_SIDE
+            self.hass,
+            frame,
+            layout_rois(options),
+            max_side=PREVIEW_SIDE,
+            highlight=None if highlight is None else region_to_roi(highlight),
         )
 
     async def _async_status_label(self, key: str) -> str:
