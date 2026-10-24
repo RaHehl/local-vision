@@ -2,18 +2,21 @@
 
 from datetime import timedelta
 from http import HTTPStatus
+from io import BytesIO
 from unittest.mock import patch
 
+from PIL import Image, ImageChops
 import pytest
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
+from tarsius import Roi, outline
 
 from custom_components.local_vision.const import DOMAIN
-from custom_components.local_vision.preview import MAX_PREVIEWS
+from custom_components.local_vision.preview import MAX_PREVIEWS, _label
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 
-from . import REGION, USER_INPUT
+from . import REGION, USER_INPUT, render_frame
 
 
 async def _preview_url(hass: HomeAssistant) -> str:
@@ -88,3 +91,30 @@ async def test_preview_needs_the_signature(
 
     unsigned = url.split("?", 1)[0]
     assert (await client.get(unsigned)).status == HTTPStatus.UNAUTHORIZED
+
+
+@pytest.mark.parametrize(
+    ("box", "area"),
+    [
+        pytest.param((0.5, 0.5, 0.9, 0.9), (0.5, 0.25, 0.75, 0.5), id="above"),
+        pytest.param((0.5, 0.0, 0.9, 0.5), (0.5, 0.0, 0.75, 0.25), id="inside"),
+    ],
+)
+def test_labels_are_written_at_their_regions(
+    box: tuple[float, float, float, float], area: tuple[float, float, float, float]
+) -> None:
+    """A label goes above its region, or inside at the top edge; the rest stays."""
+    plain = outline(render_frame(car=False), [], max_side=640)
+
+    labelled = _label(plain, [("A", Roi(*box))])
+
+    with Image.open(BytesIO(plain)) as before, Image.open(BytesIO(labelled)) as after:
+        assert after.size == before.size
+        diff = ImageChops.difference(before.convert("L"), after.convert("L"))
+    width, height = diff.size
+    left, top, right, bottom = area
+    label = diff.crop((left * width, top * height, right * width, bottom * height))
+    elsewhere = diff.crop((0, height * 3 // 4, width // 4, height))
+    # White text with a dark edge stands out, recompression barely shows.
+    assert label.getextrema()[1] > 100
+    assert elsewhere.getextrema()[1] < 30

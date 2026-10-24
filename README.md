@@ -40,7 +40,7 @@ Check the value against your meter for the first days, and tell us how it does.
 1. Pick the camera, what the meter counts and the unit printed on it.
 2. Let Local vision **suggest the counter and the dials**, or enter the regions yourself. Check every region.
 3. Enter the number of wheels and how many count after the decimal point.
-4. Check each dial: the suggested order is a guess, and you set whether a dial turns counterclockwise.
+4. If dials were suggested, match the lettered boxes to the dials by the factor printed on them (×0.1, ×0.01, ...). Then check each dial and set whether it turns counterclockwise.
 5. Confirm the value the meter shows now. Every later reading is checked against it.
 
 The sensor only takes a reading when:

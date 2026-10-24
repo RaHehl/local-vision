@@ -175,6 +175,42 @@ DIAL_SCHEMA = REGION_SCHEMA.extend(
     }
 )
 
+# Letters of the suggested dial boxes, one per dial a layout can have.
+DIAL_BOXES = tuple("abcdefgh")
+DIAL_BOX_MANUAL = "manual"
+
+
+def _dial_factor(decimal_wheels: int, number: int) -> str:
+    """Return what dial ``number`` counts in the counter's unit, e.g. x0.01.
+
+    Dial 1 counts tenths of the last wheel, each next one ten times less.
+    """
+    return f"\N{MULTIPLICATION SIGN}0.{'0' * (decimal_wheels + number - 1)}1"
+
+
+def _dial_position(number: int) -> str:
+    return f"dial_{number}"
+
+
+def _dial_order_schema(count: int, boxes: int) -> probatio.Schema:
+    """Return one box choice per dial; the finder's order is the default."""
+    options = [*DIAL_BOXES[:boxes], DIAL_BOX_MANUAL]
+    return probatio.Schema(
+        {
+            probatio.Required(
+                _dial_position(number),
+                default=DIAL_BOXES[number - 1] if number <= boxes else DIAL_BOX_MANUAL,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    translation_key="dial_box",
+                )
+            )
+            for number in range(1, count + 1)
+        }
+    )
+
 
 def _unit_schema(device_class: str) -> probatio.Schema:
     units = METER_UNITS[device_class]
@@ -291,6 +327,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         # Regions to suggest in the forms, from the finder or a former pass.
         self._suggested: dict[str, Any] = {}
         self._dial = 0
+        # Dial boxes of the last suggestion, until they are assigned to dials.
+        self._found_dials: list[dict[str, Any]] = []
         # What the meter read in the confirm step, suggested as its value
         # when the reading was accepted.
         self._candidate: float | None = None
@@ -500,6 +538,7 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         if suggestion is None:
             return await self.async_step_digits(errors={"base": "no_suggestion"})
         self._suggested = suggestion
+        self._found_dials = suggestion[CONF_DIALS][: len(DIAL_BOXES)]
         return await self.async_step_digits()
 
     async def async_step_digits(
@@ -530,6 +569,8 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
                 dials = [*self._suggested.get(CONF_DIALS, []), *[{}] * dial_count]
                 self._suggested |= {**digits, CONF_DIALS: dials[:dial_count]}
                 self._dial = 0
+                if dial_count and self._found_dials:
+                    return await self.async_step_dial_order()
                 if dial_count:
                     return await self.async_step_dial()
                 return await self.async_step_meter_confirm()
@@ -548,6 +589,45 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(DIGITS_SCHEMA, suggested),
             errors=errors,
             description_placeholders={"preview": preview},
+        )
+
+    async def async_step_dial_order(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Assign the suggested dial boxes to the dials, largest steps first."""
+        errors: dict[str, str] = {}
+        count = len(self._suggested[CONF_DIALS])
+        boxes = dict(zip(DIAL_BOXES, self._found_dials, strict=False))
+        if user_input is not None:
+            chosen = [user_input[_dial_position(n)] for n in range(1, count + 1)]
+            letters = [box for box in chosen if box != DIAL_BOX_MANUAL]
+            if len(set(letters)) < len(letters):
+                errors["base"] = "dial_box_twice"
+            else:
+                self._found_dials = []
+                # Dials marked by hand start empty, as without a suggestion.
+                self._suggested[CONF_DIALS] = [
+                    dict(boxes.get(box, {})) for box in chosen
+                ]
+                return await self.async_step_dial()
+        decimal_wheels = self._options[CONF_DECIMAL_WHEELS]
+        preview = await self._async_meter_preview(
+            self._options,
+            labels=[(letter.upper(), box) for letter, box in boxes.items()],
+        )
+        return self.async_show_form(
+            step_id="dial_order",
+            data_schema=self.add_suggested_values_to_schema(
+                _dial_order_schema(count, len(boxes)), user_input
+            ),
+            errors=errors,
+            description_placeholders={
+                "preview": preview,
+                **{
+                    f"factor_{n}": _dial_factor(decimal_wheels, n)
+                    for n in range(1, count + 1)
+                },
+            },
         )
 
     async def async_step_dial(
@@ -574,6 +654,9 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "number": str(self._dial + 1),
                 "count": str(len(self._suggested[CONF_DIALS])),
+                "factor": _dial_factor(
+                    self._options[CONF_DECIMAL_WHEELS], self._dial + 1
+                ),
                 "preview": await self._async_meter_preview(
                     self._options, _valid_region(suggested)
                 ),
@@ -654,17 +737,23 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         self,
         options: Mapping[str, Any],
         highlight: Mapping[str, float] | None = None,
+        labels: list[tuple[str, Mapping[str, Any]]] | None = None,
     ) -> str:
-        """Outline the set regions and highlight the one being edited."""
+        """Outline the set regions and highlight the one being edited.
+
+        Labelled regions are outlined too, with their label written in.
+        """
         frame = self._frame
         if rotation := options.get(CONF_ROTATION):
             frame = await self.hass.async_add_executor_job(rotate, frame, rotation)
+        labelled = [(text, region_to_roi(_region(box))) for text, box in labels or []]
         return await async_preview_url(
             self.hass,
             frame,
-            layout_rois(options),
+            [*layout_rois(options), *(roi for _, roi in labelled)],
             max_side=PREVIEW_SIDE,
             highlight=None if highlight is None else region_to_roi(highlight),
+            labels=labelled,
         )
 
     async def _async_status_label(self, key: str) -> str:

@@ -4,10 +4,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from functools import partial
+from io import BytesIO
 import secrets
 from time import monotonic
 
 from aiohttp import web
+from PIL import Image, ImageDraw, ImageFont
 from tarsius import FRAME_SIDE, Roi, outline
 
 from homeassistant.components.http import KEY_HASS, HomeAssistantView
@@ -45,13 +47,15 @@ async def async_preview_url(
     *,
     max_side: int = FRAME_SIDE,
     highlight: Roi | None = None,
+    labels: Sequence[tuple[str, Roi]] = (),
 ) -> str:
     """Render the frame with the regions outlined; return a signed URL to it.
 
     The highlight region, e.g. the one being edited, gets its own colour.
+    Each label is written into the top left corner of its region.
     """
     image = await hass.async_add_executor_job(
-        partial(outline, frame, rois, max_side=max_side, highlight=highlight)
+        partial(_render, frame, rois, max_side, highlight, labels)
     )
     if (previews := hass.data.get(DATA_PREVIEWS)) is None:
         # The first config flow runs before the integration is set up.
@@ -63,6 +67,46 @@ async def async_preview_url(
     token = secrets.token_hex(16)
     previews.images[token] = (monotonic(), image)
     return async_sign_path(hass, PREVIEW_URL.format(token=token), PREVIEW_LIFETIME)
+
+
+def _render(
+    frame: bytes,
+    rois: Roi | Sequence[Roi],
+    max_side: int,
+    highlight: Roi | None,
+    labels: Sequence[tuple[str, Roi]],
+) -> bytes:
+    """Return the outlined frame as JPEG, with the labels; blocking."""
+    image = outline(frame, rois, max_side=max_side, highlight=highlight)
+    return _label(image, labels) if labels else image
+
+
+def _label(jpeg: bytes, labels: Sequence[tuple[str, Roi]]) -> bytes:
+    """Write each label above its region, or inside when there is no room.
+
+    White with a dark edge, readable on any frame.
+    """
+    with Image.open(BytesIO(jpeg)) as opened:
+        image = opened.convert("RGB")
+    draw = ImageDraw.Draw(image)
+    size = max(16, round(max(image.size) / 24))
+    font = ImageFont.load_default(size=size)
+    edge = max(2, size // 8)
+    for text, roi in labels:
+        left, top, _, _ = roi.box(image.size)
+        above = top - edge - size - edge >= 0
+        draw.text(
+            (left, top - edge) if above else (left + 2 * edge, top + edge),
+            text,
+            fill="white",
+            font=font,
+            anchor="ls" if above else "la",
+            stroke_width=edge,
+            stroke_fill="black",
+        )
+    buffer = BytesIO()
+    image.save(buffer, "JPEG", quality=85)
+    return buffer.getvalue()
 
 
 class PreviewView(HomeAssistantView):
