@@ -1,6 +1,7 @@
 """Config flow for Local vision."""
 
 from collections.abc import Mapping
+import string
 from typing import Any, override
 
 import probatio
@@ -176,7 +177,7 @@ DIAL_SCHEMA = REGION_SCHEMA.extend(
 )
 
 # Letters of the suggested dial boxes, one per dial a layout can have.
-DIAL_BOXES = tuple("abcdefgh")
+DIAL_BOXES = tuple(string.ascii_lowercase[:MAX_DIALS])
 DIAL_BOX_MANUAL = "manual"
 
 
