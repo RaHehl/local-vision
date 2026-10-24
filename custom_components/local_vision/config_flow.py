@@ -538,7 +538,7 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         if suggestion is None:
             return await self.async_step_digits(errors={"base": "no_suggestion"})
         self._suggested = suggestion
-        self._found_dials = suggestion[CONF_DIALS][: len(DIAL_BOXES)]
+        self._found_dials = suggestion[CONF_DIALS]
         return await self.async_step_digits()
 
     async def async_step_digits(

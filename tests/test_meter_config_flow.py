@@ -839,3 +839,38 @@ async def test_dial_factor_in_the_dial_forms(
         shown.append(result["description_placeholders"]["factor"])
         result = await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
     assert shown == [_times(factor) for factor in factors]
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_suggestion_keeps_at_most_eight_dials(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """Dials beyond the eight a meter can have are left out, in the finder's order."""
+    boxes = tuple(Roi(0.1 * n, 0.6, 0.1 * n + 0.05, 0.7) for n in range(10))
+    mock_finder.return_value = Suggestion(
+        digits=Roi(0.3, 0.4, 0.7, 0.5),
+        digits_score=0.8,
+        dials=boxes,
+        dial_scores=(0.7,) * len(boxes),
+    )
+    flow_id = await _to_regions(hass)
+    result = await _choose(hass, flow_id, "suggest")
+    assert _suggested(result, CONF_DIAL_COUNT) == 8
+
+    with patch(
+        "custom_components.local_vision.preview._label", wraps=preview._label
+    ) as spy:
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {**DIGITS_INPUT, CONF_DIAL_COUNT: 8}
+        )
+    assert result["step_id"] == "dial_order"
+    assert [text for text, _ in spy.call_args.args[1]] == list("ABCDEFGH")
+    selector = result["data_schema"].schema[_field(result, "dial_8")]
+    assert selector.config["options"] == [*"abcdefgh", "manual"]
+    assert _field(result, "dial_8").default() == "h"
+
+    await hass.config_entries.flow.async_configure(flow_id, {})
+    for _ in range(7):
+        result = await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+    assert result["description_placeholders"]["number"] == "8"
+    assert _suggested(result, CONF_LEFT) == 70
