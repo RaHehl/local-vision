@@ -118,3 +118,17 @@ def test_labels_are_written_at_their_regions(
     # White text with a dark edge stands out, recompression barely shows.
     assert label.getextrema()[1] > 100
     assert elsewhere.getextrema()[1] < 30
+
+
+def test_label_at_the_right_edge_stays_in_the_image() -> None:
+    """A region at the right edge gets its label moved left, not cut off."""
+    plain = outline(render_frame(car=False), [], max_side=640)
+
+    labelled = _label(plain, [("W", Roi(0.99, 0.5, 1.0, 0.9))])
+
+    with Image.open(BytesIO(plain)) as before, Image.open(BytesIO(labelled)) as after:
+        diff = ImageChops.difference(before.convert("L"), after.convert("L"))
+    width, height = diff.size
+    # Left of the region, where an unmoved label would not reach.
+    shifted = diff.crop((width - 20, 0, round(width * 0.99) - 1, height))
+    assert shifted.getextrema()[1] > 100
