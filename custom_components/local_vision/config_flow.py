@@ -601,10 +601,10 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         boxes = dict(zip(DIAL_BOXES, self._found_dials, strict=False))
         if user_input is not None:
             chosen = [user_input[_dial_position(n)] for n in range(1, count + 1)]
-            letters = [box for box in chosen if box != DIAL_BOX_MANUAL]
-            if len(set(letters)) < len(letters):
-                errors["base"] = "dial_box_twice"
-            else:
+            for number, box in enumerate(chosen, 1):
+                if box != DIAL_BOX_MANUAL and box in chosen[: number - 1]:
+                    errors[_dial_position(number)] = "dial_box_twice"
+            if not errors:
                 self._found_dials = []
                 # Dials marked by hand start empty, as without a suggestion.
                 self._suggested[CONF_DIALS] = [

@@ -722,23 +722,23 @@ async def test_dial_order_reorders_the_dials(
 async def test_dial_order_refuses_a_box_twice(
     hass: HomeAssistant, mock_finder: Mock
 ) -> None:
-    """One box can't be two dials; the choice is kept to correct it."""
-    result = await _to_dial_order(hass, mock_finder, (FIRST_BOX, SECOND_BOX), 2)
+    """One box can't be two dials; each repeat is marked and kept to correct."""
+    result = await _to_dial_order(hass, mock_finder, (FIRST_BOX, SECOND_BOX), 3)
     flow_id = result["flow_id"]
-    twice = {"dial_1": "a", "dial_2": "a"}
-    result = await hass.config_entries.flow.async_configure(flow_id, twice)
+    thrice = {"dial_1": "a", "dial_2": "a", "dial_3": "a"}
+    result = await hass.config_entries.flow.async_configure(flow_id, thrice)
     assert result["step_id"] == "dial_order"
-    assert result["errors"] == {"base": "dial_box_twice"}
+    assert result["errors"] == {"dial_2": "dial_box_twice", "dial_3": "dial_box_twice"}
     assert _suggested(result, "dial_2") == "a"
 
     result = await hass.config_entries.flow.async_configure(
-        flow_id, {"dial_1": "manual", "dial_2": "manual"}
+        flow_id, {"dial_1": "a", "dial_2": "manual", "dial_3": "manual"}
     )
     assert result["step_id"] == "dial"
 
 
 @pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
-async def test_dial_order_mark_it_myself(
+async def test_dial_order_enter_it_yourself(
     hass: HomeAssistant, mock_finder: Mock
 ) -> None:
     """A dial marked by hand starts empty, an unused box is left out."""

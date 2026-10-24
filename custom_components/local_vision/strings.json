@@ -14,7 +14,7 @@
       "blank_frame": "The camera shows nothing, for example because it is offline or covered. Check the camera and try again.",
       "blank_region": "There is nothing to compare in this region, for example because it shows a plain surface. Make the region larger or move it to a part with some detail.",
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "dial_box_twice": "Each box can only be one dial. Choose every letter at most once.",
+      "dial_box_twice": "This box is already chosen for another dial.",
       "invalid_frame": "The camera returned an image that Home Assistant can't read. Check the camera's settings and try again.",
       "invalid_horizontal_range": "The left edge must be smaller than the right edge.",
       "invalid_max_rate": "The maximum increase must be above 0.",
@@ -44,16 +44,16 @@
       },
       "dial_order": {
         "data": {
-          "dial_1": "{factor_1} dial",
-          "dial_2": "{factor_2} dial",
-          "dial_3": "{factor_3} dial",
-          "dial_4": "{factor_4} dial",
-          "dial_5": "{factor_5} dial",
-          "dial_6": "{factor_6} dial",
-          "dial_7": "{factor_7} dial",
-          "dial_8": "{factor_8} dial"
+          "dial_1": "Dial {factor_1}",
+          "dial_2": "Dial {factor_2}",
+          "dial_3": "Dial {factor_3}",
+          "dial_4": "Dial {factor_4}",
+          "dial_5": "Dial {factor_5}",
+          "dial_6": "Dial {factor_6}",
+          "dial_7": "Dial {factor_7}",
+          "dial_8": "Dial {factor_8}"
         },
-        "description": "![Current frame with the suggested dials lettered]({preview})\n\nThe suggestion lettered the pointer dials it found. Their order is a guess: choose the box of each dial by the factor printed on it. The next steps show each dial to check. Choose **Mark it myself** for a dial without a box. Boxes you don't need stay unused.",
+        "description": "![Current frame with the suggested dials lettered]({preview})\n\nHome Assistant lettered the pointer dials it found, in a guessed order. For each dial, choose the box with that factor printed on it. You can adjust each dial in the next steps. Choose **Enter it yourself** for a dial without a box. Unused boxes are ignored.",
         "title": "Which dial is which?"
       },
       "digits": {
@@ -358,7 +358,7 @@
         "f": "F",
         "g": "G",
         "h": "H",
-        "manual": "Mark it myself"
+        "manual": "Enter it yourself"
       }
     },
     "meter_device_class": {
