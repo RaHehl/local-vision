@@ -193,14 +193,21 @@ def _dial_position(number: int) -> str:
     return f"dial_{number}"
 
 
-def _dial_order_schema(count: int, boxes: int) -> probatio.Schema:
-    """Return one box choice per dial; the finder's order is the default."""
+def _dial_order_defaults(count: int, boxes: int, former: list[str]) -> list[str]:
+    """Return the former choices, then the unused boxes in the finder's order."""
+    defaults = former[:count]
+    unused = [box for box in DIAL_BOXES[:boxes] if box not in defaults]
+    defaults += unused[: count - len(defaults)]
+    return defaults + [DIAL_BOX_MANUAL] * (count - len(defaults))
+
+
+def _dial_order_schema(boxes: int, defaults: list[str]) -> probatio.Schema:
+    """Return one box choice per dial."""
     options = [*DIAL_BOXES[:boxes], DIAL_BOX_MANUAL]
     return probatio.Schema(
         {
             probatio.Required(
-                _dial_position(number),
-                default=DIAL_BOXES[number - 1] if number <= boxes else DIAL_BOX_MANUAL,
+                _dial_position(number), default=default
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=options,
@@ -208,7 +215,7 @@ def _dial_order_schema(count: int, boxes: int) -> probatio.Schema:
                     translation_key="dial_box",
                 )
             )
-            for number in range(1, count + 1)
+            for number, default in enumerate(defaults, 1)
         }
     )
 
@@ -328,8 +335,11 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         # Regions to suggest in the forms, from the finder or a former pass.
         self._suggested: dict[str, Any] = {}
         self._dial = 0
-        # Dial boxes of the last suggestion, until they are assigned to dials.
+        # Dial boxes of the suggestion, in the frame turned by its rotation.
         self._found_dials: list[dict[str, Any]] = []
+        self._found_rotation: float | None = None
+        # The box chosen for each dial in the order step, or DIAL_BOX_MANUAL.
+        self._dial_choices: list[str] = []
         # What the meter read in the confirm step, suggested as its value
         # when the reading was accepted.
         self._candidate: float | None = None
@@ -538,8 +548,11 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
             suggestion = None
         if suggestion is None:
             return await self.async_step_digits(errors={"base": "no_suggestion"})
-        self._suggested = suggestion
         self._found_dials = suggestion[CONF_DIALS]
+        self._found_rotation = suggestion[CONF_ROTATION]
+        self._dial_choices = []
+        # The boxes fill the dial forms only once assigned in the order step.
+        self._suggested = {**suggestion, CONF_DIALS: [{} for _ in self._found_dials]}
         return await self.async_step_digits()
 
     async def async_step_digits(
@@ -571,7 +584,10 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._suggested |= {**digits, CONF_DIALS: dials[:dial_count]}
                 self._dial = 0
                 if dial_count and self._found_dials:
-                    return await self.async_step_dial_order()
+                    if user_input[CONF_ROTATION] == self._found_rotation:
+                        return await self.async_step_dial_order()
+                    # In another rotation the boxes are misplaced.
+                    self._dial_choices = []
                 if dial_count:
                     return await self.async_step_dial()
                 return await self.async_step_meter_confirm()
@@ -605,11 +621,18 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
                 if box != DIAL_BOX_MANUAL and box in chosen[: number - 1]:
                     errors[_dial_position(number)] = "dial_box_twice"
             if not errors:
-                self._found_dials = []
-                # Dials marked by hand start empty, as without a suggestion.
+                # A dial keeps its edited region while its choice stays,
+                # one entered by hand starts empty, as without a suggestion.
+                former = self._dial_choices
                 self._suggested[CONF_DIALS] = [
-                    dict(boxes.get(box, {})) for box in chosen
+                    region
+                    if number < len(former) and box == former[number]
+                    else dict(boxes.get(box, {}))
+                    for number, (box, region) in enumerate(
+                        zip(chosen, self._suggested[CONF_DIALS], strict=True)
+                    )
                 ]
+                self._dial_choices = chosen
                 return await self.async_step_dial()
         decimal_wheels = self._options[CONF_DECIMAL_WHEELS]
         preview = await self._async_meter_preview(
@@ -619,7 +642,11 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="dial_order",
             data_schema=self.add_suggested_values_to_schema(
-                _dial_order_schema(count, len(boxes)), user_input
+                _dial_order_schema(
+                    len(boxes),
+                    _dial_order_defaults(count, len(boxes), self._dial_choices),
+                ),
+                user_input,
             ),
             errors=errors,
             description_placeholders={

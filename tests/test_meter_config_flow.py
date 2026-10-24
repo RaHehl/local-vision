@@ -629,6 +629,7 @@ async def test_reconfigure_loaded_meter_keeps_its_value(
 
 
 FIRST_BOX, SECOND_BOX = Roi(0.6, 0.6, 0.7, 0.8), Roi(0.2, 0.6, 0.3, 0.8)
+THIRD_BOX = Roi(0.4, 0.6, 0.5, 0.8)
 FIRST_DIAL = {
     CONF_LEFT: 60,
     CONF_TOP: 60,
@@ -637,6 +638,7 @@ FIRST_DIAL = {
     CONF_COUNTERCLOCKWISE: False,
 }
 SECOND_DIAL = {**FIRST_DIAL, CONF_LEFT: 20, CONF_RIGHT: 30}
+THIRD_DIAL = {**FIRST_DIAL, CONF_LEFT: 40, CONF_RIGHT: 50}
 
 
 async def _to_dial_order(
@@ -645,9 +647,11 @@ async def _to_dial_order(
     boxes: tuple[Roi, ...],
     dial_count: int,
     decimal_wheels: int = 0,
+    rotation: float = 0.0,
 ) -> FlowResult:
-    """Suggest the boxes and confirm the counter with the dial count."""
+    """Suggest the boxes and confirm the counter, not turned, with the dial count."""
     mock_finder.return_value = Suggestion(
+        rotation=rotation,
         digits=Roi(0.3, 0.4, 0.7, 0.5),
         digits_score=0.8,
         dials=boxes,
@@ -782,23 +786,110 @@ async def test_dial_order_fewer_boxes_than_dials(
     assert _suggested(result, CONF_LEFT) == 60
 
 
+def _empty(result: FlowResult) -> bool:
+    return all(
+        "suggested_value" not in (field.description or {})
+        for field in result["data_schema"].schema
+    )
+
+
+def _defaults(result: FlowResult, count: int) -> list[str]:
+    return [_field(result, f"dial_{n}").default() for n in range(1, count + 1)]
+
+
 @pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
 async def test_dial_order_only_after_a_suggestion_with_dials(
     hass: HomeAssistant, mock_finder: Mock
 ) -> None:
-    """Without found dials, or once assigned, the dial forms come directly."""
+    """Without found dials the dial forms come directly and start empty."""
     result = await _to_dial_order(hass, mock_finder, (), 1)
     assert result["step_id"] == "dial"
+    assert _empty(result)
 
-    result = await _to_dial_order(hass, mock_finder, (FIRST_BOX,), 1)
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_dial_order_picks_a_later_box(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """Any found box can be the only dial."""
+    boxes = (FIRST_BOX, SECOND_BOX, THIRD_BOX)
+    result = await _to_dial_order(hass, mock_finder, boxes, 1)
     flow_id = result["flow_id"]
-    await hass.config_entries.flow.async_configure(flow_id, {})
-    await hass.config_entries.flow.async_configure(flow_id, FIRST_DIAL)
+    result = await hass.config_entries.flow.async_configure(flow_id, {"dial_1": "c"})
+    assert _suggested(result, CONF_LEFT) == 40
+    await hass.config_entries.flow.async_configure(flow_id, THIRD_DIAL)
+    result = await _confirm(hass, flow_id)
+    assert result["options"][CONF_DIALS] == [THIRD_DIAL]
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_dial_order_again_after_going_back(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """Back at the counter, the order comes again with the former choices.
+
+    A dial whose box stays keeps its edited region, another box starts
+    from the found one.
+    """
+    boxes = (FIRST_BOX, SECOND_BOX, THIRD_BOX)
+    result = await _to_dial_order(hass, mock_finder, boxes, 1)
+    flow_id = result["flow_id"]
+    await hass.config_entries.flow.async_configure(flow_id, {"dial_1": "c"})
+    edited = {**THIRD_DIAL, CONF_RIGHT: 51, CONF_COUNTERCLOCKWISE: True}
+    result = await hass.config_entries.flow.async_configure(flow_id, edited)
+    assert result["step_id"] == "meter_confirm"
+
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_DECIMAL_WHEELS: 0, CONF_DIAL_COUNT: 3}
+    )
+    assert result["step_id"] == "dial_order"
+    assert _defaults(result, 3) == ["c", "a", "b"]
+    selector = result["data_schema"].schema[_field(result, "dial_1")]
+    assert selector.config["options"] == ["a", "b", "c", "manual"]
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
+    assert _suggested(result, CONF_RIGHT) == 51
+    assert _suggested(result, CONF_COUNTERCLOCKWISE) is True
+    result = await hass.config_entries.flow.async_configure(flow_id, edited)
+    assert _suggested(result, CONF_LEFT) == 60
+    result = await hass.config_entries.flow.async_configure(flow_id, FIRST_DIAL)
+    assert _suggested(result, CONF_LEFT) == 20
+    await hass.config_entries.flow.async_configure(flow_id, SECOND_DIAL)
+
     await _choose(hass, flow_id, "digits")
     result = await hass.config_entries.flow.async_configure(
         flow_id, {**DIGITS_INPUT, CONF_DIAL_COUNT: 1}
     )
+    assert _defaults(result, 1) == ["c"]
+    result = await hass.config_entries.flow.async_configure(flow_id, {"dial_1": "b"})
+    assert _suggested(result, CONF_LEFT) == 20
+    assert _suggested(result, CONF_COUNTERCLOCKWISE) is False
+    await hass.config_entries.flow.async_configure(flow_id, SECOND_DIAL)
+    result = await _confirm(hass, flow_id)
+    assert result["options"][CONF_DIALS] == [SECOND_DIAL]
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_dial_order_only_in_the_suggested_rotation(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """In another rotation the boxes are misplaced, so they are not offered."""
+    boxes = (FIRST_BOX, SECOND_BOX)
+    result = await _to_dial_order(hass, mock_finder, boxes, 2, rotation=4.0)
+    flow_id = result["flow_id"]
     assert result["step_id"] == "dial"
+    assert _empty(result)
+    result = await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+    assert _empty(result)
+    await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_ROTATION: 4.0, CONF_DIAL_COUNT: 2}
+    )
+    assert result["step_id"] == "dial_order"
+    assert _defaults(result, 2) == ["a", "b"]
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
     assert _suggested(result, CONF_LEFT) == 60
 
 
