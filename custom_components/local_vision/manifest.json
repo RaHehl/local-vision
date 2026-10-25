@@ -8,6 +8,6 @@
   "integration_type": "helper",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/RaHehl/local-vision/issues",
-  "requirements": ["tarsius==0.5.1"],
+  "requirements": ["tarsius==0.5.2"],
   "version": "0.1.1"
 }
