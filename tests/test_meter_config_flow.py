@@ -90,6 +90,12 @@ async def _confirm(
     return await hass.config_entries.flow.async_configure(flow_id, {CONF_VALUE: value})
 
 
+async def _unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Let the reload after the flow finish, then unload the entry."""
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 def _suggested(result: FlowResult, key: str) -> Any:
     for field in result["data_schema"].schema:
         if field == key:
@@ -484,6 +490,7 @@ async def test_reconfigure_keeps_the_value(
     assert meter_entry.options[CONF_DIGITS][CONF_LEFT] == 31
     assert meter_entry.options[CONF_CONFIRMED] == confirmed
     assert meter_entry.options[CONF_CALIBRATION] == Calibration().as_dict()
+    await _unload(hass, meter_entry)
 
 
 @pytest.mark.usefixtures("camera", "mock_meter_reader")
@@ -516,6 +523,7 @@ async def test_reconfigure_with_another_scale_asks_the_value(
     assert result["reason"] == "reconfigure_successful"
     assert meter_entry.options[CONF_CONFIRMED][CONF_VALUE] == 1234.5
     assert meter_entry.options[CONF_UNIT] == unit
+    await _unload(hass, meter_entry)
 
 
 @pytest.mark.usefixtures("camera")
@@ -569,6 +577,7 @@ async def test_reconfigure_broken_settings(
 
     result = await _confirm(hass, flow_id)
     assert meter_entry.options[CONF_WHEELS] == 8
+    await _unload(hass, meter_entry)
 
 
 @pytest.mark.usefixtures("camera", "mock_meter_reader")
@@ -593,6 +602,7 @@ async def test_reconfigure_without_a_value_asks_for_it(
 
     result = await _confirm(hass, flow_id, 123.4)
     assert meter_entry.options[CONF_CONFIRMED][CONF_VALUE] == 123.4
+    await _unload(hass, meter_entry)
 
 
 @pytest.mark.usefixtures("camera", "mock_meter_reader")
