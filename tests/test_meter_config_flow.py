@@ -894,6 +894,60 @@ async def test_dial_order_only_in_the_suggested_rotation(
 
 
 @pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_dial_order_after_another_rotation_offers_the_boxes(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """Dials entered in another rotation don't stay with the chosen boxes."""
+    result = await _to_dial_order(hass, mock_finder, (FIRST_BOX, SECOND_BOX), 2)
+    flow_id = result["flow_id"]
+    assert result["step_id"] == "dial_order"
+    await hass.config_entries.flow.async_configure(flow_id, {})
+    await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+    await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_ROTATION: 4.0, CONF_DIAL_COUNT: 2}
+    )
+    assert result["step_id"] == "dial"
+    elsewhere = {**DIAL_INPUT, CONF_LEFT: 10, CONF_RIGHT: 20}
+    await hass.config_entries.flow.async_configure(flow_id, elsewhere)
+    await hass.config_entries.flow.async_configure(flow_id, elsewhere)
+
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_DIAL_COUNT: 2}
+    )
+    assert result["step_id"] == "dial_order"
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
+    assert _suggested(result, CONF_LEFT) == 60
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
+async def test_dial_order_after_no_dials_offers_the_boxes(
+    hass: HomeAssistant, mock_finder: Mock
+) -> None:
+    """Going to no dials and back starts the dials from the boxes again."""
+    result = await _to_dial_order(hass, mock_finder, (FIRST_BOX, SECOND_BOX), 2)
+    flow_id = result["flow_id"]
+    await hass.config_entries.flow.async_configure(flow_id, {})
+    await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+    await hass.config_entries.flow.async_configure(flow_id, DIAL_INPUT)
+
+    await _choose(hass, flow_id, "digits")
+    await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_DIAL_COUNT: 0}
+    )
+    await _choose(hass, flow_id, "digits")
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**DIGITS_INPUT, CONF_DIAL_COUNT: 2}
+    )
+    assert result["step_id"] == "dial_order"
+    result = await hass.config_entries.flow.async_configure(flow_id, {})
+    assert _suggested(result, CONF_LEFT) == 60
+
+
+@pytest.mark.usefixtures("camera", "mock_setup_entry", "mock_meter_reader")
 async def test_dial_order_letters_the_boxes(
     hass: HomeAssistant, mock_finder: Mock
 ) -> None:

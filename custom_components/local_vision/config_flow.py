@@ -583,10 +583,11 @@ class LocalVisionConfigFlow(ConfigFlow, domain=DOMAIN):
                 dials = [*self._suggested.get(CONF_DIALS, []), *[{}] * dial_count]
                 self._suggested |= {**digits, CONF_DIALS: dials[:dial_count]}
                 self._dial = 0
+                self._dial_choices = self._dial_choices[:dial_count]
                 if dial_count and self._found_dials:
                     if user_input[CONF_ROTATION] == self._found_rotation:
                         return await self.async_step_dial_order()
-                    # In another rotation the boxes are misplaced.
+                    # Regions from another rotation are no box's region.
                     self._dial_choices = []
                 if dial_count:
                     return await self.async_step_dial()
