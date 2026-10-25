@@ -17,7 +17,9 @@ Two helper types:
 
 Requires Home Assistant 2026.10 or newer.
 
-Install **Local vision** from the Marketplace (HACS). Until it is listed there, add `https://github.com/RaHehl/local-vision` as a custom repository of type integration. Restart Home Assistant.
+Install **Local vision** from the Marketplace (HACS) and restart Home Assistant.
+
+[![Open Local vision in the Marketplace (HACS) of your Home Assistant.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RaHehl&repository=local-vision&category=integration)
 
 Then go to **Settings** > **Devices & services** > **Helpers** > **Create helper** > **Local vision**.
 
