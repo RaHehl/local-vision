@@ -36,6 +36,7 @@ from .const import (
     CONF_ROTATION,
     CONF_WHEELS,
     LOGGER,
+    MAX_DIALS,
 )
 from .detection import region_to_roi
 
@@ -146,7 +147,8 @@ _alpha_silenced = False
 def suggest(frame: bytes) -> dict[str, Any] | None:
     """Return regions the alpha finder suggests, None without a match; blocking.
 
-    The regions are in percent like the flow forms. Raises tarsius
+    The regions are in percent like the flow forms. Only the first
+    MAX_DIALS dials in the finder's order are kept. Raises tarsius
     ImageError, BlankFrameError or BackendError.
     """
     global _alpha_silenced  # noqa: PLW0603
@@ -165,7 +167,8 @@ def suggest(frame: bytes) -> dict[str, Any] | None:
         CONF_DIGITS: _percent(suggestion.digits),
         CONF_ROTATION: round(suggestion.rotation, 1),
         CONF_DIALS: [
-            {**_percent(roi), CONF_COUNTERCLOCKWISE: False} for roi in suggestion.dials
+            {**_percent(roi), CONF_COUNTERCLOCKWISE: False}
+            for roi in suggestion.dials[:MAX_DIALS]
         ],
     }
 

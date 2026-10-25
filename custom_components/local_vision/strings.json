@@ -14,6 +14,7 @@
       "blank_frame": "The camera shows nothing, for example because it is offline or covered. Check the camera and try again.",
       "blank_region": "There is nothing to compare in this region, for example because it shows a plain surface. Make the region larger or move it to a part with some detail.",
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "dial_box_twice": "This box is already chosen for another dial.",
       "invalid_frame": "The camera returned an image that Home Assistant can't read. Check the camera's settings and try again.",
       "invalid_horizontal_range": "The left edge must be smaller than the right edge.",
       "invalid_max_rate": "The maximum increase must be above 0.",
@@ -38,8 +39,22 @@
           "right": "[%key:component::local_vision::config::step::region::data_description::right%]",
           "top": "[%key:component::local_vision::config::step::region::data_description::top%]"
         },
-        "description": "![Current frame with the regions outlined]({preview})\n\nPut the region around dial {number}, centered on its axis. Dial 1 counts the largest steps, for example ×0.1, the next one ten times smaller.",
-        "title": "Pointer dial {number} of {count}"
+        "description": "![Current frame with the regions outlined]({preview})\n\nPut the region around the {factor} dial, centered on its axis. If the factor printed on the dial differs, check the wheels after the decimal point.",
+        "title": "Pointer dial {number} of {count} ({factor})"
+      },
+      "dial_order": {
+        "data": {
+          "dial_1": "Dial {factor_1}",
+          "dial_2": "Dial {factor_2}",
+          "dial_3": "Dial {factor_3}",
+          "dial_4": "Dial {factor_4}",
+          "dial_5": "Dial {factor_5}",
+          "dial_6": "Dial {factor_6}",
+          "dial_7": "Dial {factor_7}",
+          "dial_8": "Dial {factor_8}"
+        },
+        "description": "![Current frame with the suggested dials lettered]({preview})\n\nHome Assistant lettered the pointer dials it found, in a guessed order. For each dial, choose the box with that factor printed on it. You can adjust each dial in the next steps. Choose **Enter it yourself** for a dial without a box. Unused boxes are ignored.",
+        "title": "Which dial is which?"
       },
       "digits": {
         "data": {
@@ -331,6 +346,19 @@
         "occupancy": "[%key:component::binary_sensor::entity_component::occupancy::name%]",
         "opening": "[%key:component::binary_sensor::entity_component::opening::name%]",
         "window": "[%key:component::binary_sensor::entity_component::window::name%]"
+      }
+    },
+    "dial_box": {
+      "options": {
+        "a": "A",
+        "b": "B",
+        "c": "C",
+        "d": "D",
+        "e": "E",
+        "f": "F",
+        "g": "G",
+        "h": "H",
+        "manual": "Enter it yourself"
       }
     },
     "meter_device_class": {
