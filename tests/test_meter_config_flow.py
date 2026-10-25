@@ -93,7 +93,7 @@ async def _confirm(
 async def _unload(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """Let the reload after the flow finish, then unload the entry."""
     await hass.async_block_till_done()
-    await hass.config_entries.async_unload(entry.entry_id)
+    assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 def _suggested(result: FlowResult, key: str) -> Any:

@@ -122,6 +122,7 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
         self._stored = stored
         # Digest of the last frame read.
         self._last_frame = b""
+        self._closed = False
 
     @property
     def value(self) -> float | None:
@@ -163,6 +164,9 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
                 translation_key="model_unavailable",
                 translation_placeholders={"error": str(err)},
             ) from err
+        if self._closed:
+            # The startup refresh is not cancelled; its save would come late.
+            return reading
         # Rejected readings change what the checks remember too.
         self._store.async_delay_save(self._data_to_save, SAVE_DELAY)
         self._update_dispute_issue()
@@ -204,6 +208,7 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
 
     @override
     async def async_shutdown(self) -> None:
+        self._closed = True
         await super().async_shutdown()
         # A delayed save must not land after a reload or the removal.
         async with self._lock:

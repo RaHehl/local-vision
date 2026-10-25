@@ -1,5 +1,6 @@
 """Tests for the Local vision meter sensors."""
 
+import asyncio
 from datetime import timedelta
 import threading
 from typing import Any
@@ -16,6 +17,7 @@ from syrupy.assertion import SnapshotAssertion
 from tarsius import BackendError, BlankFrameError, ImageError
 from tarsius.meter import Calibration, MeterReader, Rejection
 
+from custom_components.local_vision import coordinator
 from custom_components.local_vision.const import (
     CONF_CALIBRATION,
     CONF_CONFIRMED,
@@ -24,8 +26,12 @@ from custom_components.local_vision.const import (
     UPDATE_INTERVAL,
 )
 from custom_components.local_vision.meter_store import SAVE_DELAY, STORAGE_VERSION
-from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
 from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import entity_registry as er, issue_registry as ir
 from homeassistant.util import dt as dt_util
@@ -346,6 +352,57 @@ async def test_unload_writes_a_pending_save(
 
     await hass.config_entries.async_unload(meter_entry.entry_id)
     assert hass_storage[_key(meter_entry)]["data"]["meter"]["value"] == 123.5
+
+
+@pytest.mark.usefixtures("camera")
+async def test_removal_leaves_no_store_behind(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    meter_entry: MockConfigEntry,
+    mock_meter_reader: Mock,
+) -> None:
+    """A save pending at the removal does not bring the store back."""
+    await setup_integration(hass, meter_entry)
+    await _flush(hass, freezer)
+    mock_meter_reader.return_value = meter_reading(123.5)
+    await _poll(hass, freezer)
+
+    await hass.config_entries.async_remove(meter_entry.entry_id)
+    await _flush(hass, freezer)
+    assert _key(meter_entry) not in hass_storage
+
+
+@pytest.mark.usefixtures("camera")
+async def test_startup_read_after_removal_saves_nothing(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    meter_entry: MockConfigEntry,
+    mock_meter_reader: Mock,
+) -> None:
+    """The refresh after start may finish after a removal and must not save."""
+    fetching = asyncio.Event()
+    fetched = asyncio.Event()
+    fetch = coordinator.async_fetch_camera_frame
+
+    async def slow_fetch(hass: HomeAssistant, entry: ConfigEntry) -> bytes:
+        fetching.set()
+        await fetched.wait()
+        return await fetch(hass, entry)
+
+    hass.set_state(CoreState.starting)
+    with patch.object(coordinator, "async_fetch_camera_frame", slow_fetch):
+        await setup_integration(hass, meter_entry)
+        mock_meter_reader.return_value = meter_reading(123.5)
+        hass.set_state(CoreState.running)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+        await fetching.wait()
+        await hass.config_entries.async_remove(meter_entry.entry_id)
+        fetched.set()
+        await hass.async_block_till_done()
+    await _flush(hass, freezer)
+    assert _key(meter_entry) not in hass_storage
 
 
 @pytest.mark.usefixtures("camera", "mock_meter_reader")
