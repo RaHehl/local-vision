@@ -120,6 +120,24 @@ def test_labels_are_written_at_their_regions(
     assert elsewhere.getextrema()[1] < 30
 
 
+def _dark_pixels(jpeg: bytes) -> int:
+    with Image.open(BytesIO(jpeg)) as image:
+        return sum(value < 40 for value in image.convert("L").tobytes())
+
+
+@pytest.mark.parametrize("left", [0.0, 0.99], ids=["left", "right"])
+def test_label_at_an_edge_keeps_its_outline(left: float) -> None:
+    """A label at an edge keeps all of its dark outline, as in the middle."""
+    frame = BytesIO()
+    Image.new("RGB", (640, 480), (128, 128, 128)).save(frame, "JPEG", quality=95)
+    grey = frame.getvalue()
+
+    middle = _label(grey, [("W", Roi(0.5, 0.5, 0.51, 0.9))])
+    at_edge = _label(grey, [("W", Roi(left, 0.5, left + 0.01, 0.9))])
+
+    assert _dark_pixels(at_edge) >= _dark_pixels(middle)
+
+
 def test_label_at_the_right_edge_stays_in_the_image() -> None:
     """A region at the right edge gets its label moved left, not cut off."""
     plain = outline(render_frame(car=False), [], max_side=640)

@@ -96,9 +96,9 @@ def _label(jpeg: bytes, labels: Sequence[tuple[str, Roi]]) -> bytes:
         left, top, _, _ = roi.box(image.size)
         above = top - edge - size - edge >= 0
         x = left if above else left + 2 * edge
-        # A region at the right edge keeps its label inside the image.
-        width = draw.textlength(text, font=font) + 2 * edge
-        x = max(0, min(x, image.width - width))
+        # A region at an edge keeps its label and outline inside the image.
+        width = draw.textlength(text, font=font)
+        x = max(edge, min(x, image.width - width - edge))
         draw.text(
             (x, top - edge) if above else (x, top + edge),
             text,
