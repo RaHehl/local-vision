@@ -17,9 +17,11 @@ Two helper types:
 
 Requires Home Assistant 2026.10 or newer.
 
-Install **Local vision** from the Marketplace (HACS) and restart Home Assistant.
+Install **Local vision** from the Marketplace (HACS):
 
 [![Open Local vision in the Marketplace (HACS) of your Home Assistant.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RaHehl&repository=local-vision&category=integration)
+
+Restart Home Assistant.
 
 Then go to **Settings** > **Devices & services** > **Helpers** > **Create helper** > **Local vision**.
 
