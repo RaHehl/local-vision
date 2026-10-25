@@ -330,6 +330,24 @@ async def test_saves_are_delayed(
     assert hass_storage[_key(meter_entry)]["data"]["meter"]["value"] == 123.5
 
 
+@pytest.mark.usefixtures("camera")
+async def test_unload_writes_a_pending_save(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    freezer: FrozenDateTimeFactory,
+    meter_entry: MockConfigEntry,
+    mock_meter_reader: Mock,
+) -> None:
+    """Unloading writes a pending save at once, so it can't land later."""
+    await setup_integration(hass, meter_entry)
+    await _flush(hass, freezer)
+    mock_meter_reader.return_value = meter_reading(123.5)
+    await _poll(hass, freezer)
+
+    await hass.config_entries.async_unload(meter_entry.entry_id)
+    assert hass_storage[_key(meter_entry)]["data"]["meter"]["value"] == 123.5
+
+
 @pytest.mark.usefixtures("camera", "mock_meter_reader")
 async def test_store_from_version_1_is_migrated(
     hass: HomeAssistant,

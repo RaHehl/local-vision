@@ -202,6 +202,13 @@ class MeterCoordinator(DataUpdateCoordinator[Readout | None]):
         self._update_dispute_issue()
         self.async_update_listeners()
 
+    @override
+    async def async_shutdown(self) -> None:
+        await super().async_shutdown()
+        # A delayed save must not land after a reload or the removal.
+        async with self._lock:
+            await self._store.async_save(self._data_to_save())
+
     def _data_to_save(self) -> dict[str, Any]:
         meter = self._stored.get("meter")
         meter = dict(meter) if isinstance(meter, dict) else {}
